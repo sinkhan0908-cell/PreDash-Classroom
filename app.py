@@ -189,20 +189,88 @@ def stock_evidence_charts(item):
             st.dataframe([{'투자자':label,'누적 순매수(주)':history[-1]['cumulative'][k]} for label,k in [('외국인','foreign'),('기관','institution'),('개인','individual')]],hide_index=True,use_container_width=True)
         else:st.info('근거 자료 새로고침으로 수급을 조회하세요. KIS 연결이 필요합니다.')
 
+def kis_price_ready():
+    settings=account_settings()
+    return all(settings[k] for k in ('key','secret','cano','product'))
+
+
+def price_sources_ready():
+    return bool(api_key('DATA_GO_KR_SERVICE_KEY')) or kis_price_ready()
+
+
+def price_history_with_fallback(code,provider,today):
+    """Use public daily prices first, then KIS mock daily closes on provider failure."""
+    public_error=None
+    if api_key('DATA_GO_KR_SERVICE_KEY'):
+        try:
+            history=provider.price_history(code,today)
+            lamp=stock_lamp(history,code,today)
+            chart=price_trend(history,code,today)
+            if lamp is not None and chart:
+                return history,lamp,chart,'공공데이터포털'
+            public_error=DataError('공공데이터포털 최근 20거래일 종가가 부족합니다.')
+        except (DataError,MarketDataError) as exc:
+            public_error=exc
+    else:
+        public_error=DataError('공공데이터포털 시세 키가 없습니다.')
+    if not kis_price_ready():
+        raise DataError(f'공공데이터포털 보류 · {public_error} · KIS fallback 보류 · 한국투자증권 모의투자 연결이 필요합니다.')
+    try:
+        history=kis_client().price_history(code,today)
+        lamp=stock_lamp(history,code,today)
+        chart=price_trend(history,code,today)
+        if lamp is None or not chart:
+            raise BrokerError('KIS 최근 20거래일 종가가 부족합니다.')
+        return history,lamp,chart,'KIS 모의투자'
+    except (BrokerError,MarketDataError) as exc:
+        raise DataError(f'공공데이터포털 보류 · {public_error} · KIS fallback 보류 · {exc}') from None
+
+
+def quote_with_fallback(code,provider,today):
+    """Use the public close first, then select the latest KIS daily close."""
+    public_error=None
+    if api_key('DATA_GO_KR_SERVICE_KEY'):
+        try:
+            price,day,name=provider.price(code,today)
+            return int(price),day,name,'공공데이터포털'
+        except DataError as exc:
+            public_error=exc
+    else:
+        public_error=DataError('공공데이터포털 시세 키가 없습니다.')
+    if not kis_price_ready():
+        raise DataError(f'공공데이터포털 보류 · {public_error} · KIS fallback 보류 · 한국투자증권 모의투자 연결이 필요합니다.')
+    try:
+        rows=kis_client().price_history(code,today)
+        candidates=[]
+        for row in rows:
+            day=str(row.get('basDt',''))
+            if re.fullmatch(r'\d{8}',day) and day <= today.strftime('%Y%m%d'):
+                close=float(str(row.get('clpr','')).replace(',',''))
+                if close>0:
+                    candidates.append((day,close,row.get('itmsNm') or code))
+        if not candidates:
+            raise BrokerError('KIS 최근 종가 자료가 없습니다.')
+        day,price,name=max(candidates,key=lambda item:item[0])
+        return int(price),day,name,'KIS 모의투자'
+    except (BrokerError,ValueError,TypeError) as exc:
+        raise DataError(f'공공데이터포털 보류 · {public_error} · KIS fallback 보류 · {exc}') from None
+
+
 def watch_fetch(code,provider,today):
     result={'code':code,'name':st.session_state.get('watch_names',{}).get(code,code),'lamp':None,'metrics':None,'flow':None,'krx':None,'report':None,'errors':{},
-            'fetched':datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y-%m-%d %H:%M')}
+            'price_source':None,'fetched':datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y-%m-%d %H:%M')}
     try:
-        history=provider.price_history(code,today)
-        result['lamp']=stock_lamp(history,code,today)
-        result['price_chart']=price_trend(history,code,today)
+        history,lamp,chart,source=price_history_with_fallback(code,provider,today)
+        result['lamp']=lamp
+        result['price_chart']=chart
+        result['price_source']=source
         result['benchmark']=benchmark(history,code)
         result['price_rows']=history
         name=next((row.get('itmsNm') for row in history if
             str(row.get('srtnCd','')).removeprefix('A').zfill(6)==code and row.get('itmsNm')),None)
         if name:result['name']=name
-        if result['lamp'] is None:result['errors']['price']='최근 20거래일 종가 부족 또는 기준일 경과'
-    except (DataError,MarketDataError) as exc:result['errors']['price']=str(exc)
+    except DataError as exc:
+        result['errors']['price']=str(exc)
     if api_key('DART_CRTFC_KEY'):
         try:result['metrics']=provider.latest_period_metrics(code,today)
         except DataError as exc:result['errors']['metrics']=str(exc)
@@ -455,17 +523,17 @@ elif page=='매매 연습':
             picked=st.selectbox('관심종목에서 선택',saved,key='paper_watch_pick')
         else:picked=''
         code=st.text_input('종목코드 6자리',value=picked,key=f'paper_code_{picked}',max_chars=6).strip()
-        configured=bool(api_key('DATA_GO_KR_SERVICE_KEY'))
+        configured=price_sources_ready()
         if st.button('체결 기준 종가 조회',disabled=not configured):
             try:
                 if not re.fullmatch(r'[0-9]{6}',code):raise DataError('숫자 6자리 종목코드를 입력하세요.')
                 with st.spinner('공식 종가를 조회합니다…'):
-                    price,day,name=official_client().price(code,today)
-                quote={'price':int(price),'date':datetime.strptime(day,'%Y%m%d').date().isoformat(),'name':name}
+                    price,day,name,source=quote_with_fallback(code,official_client(),today)
+                quote={'price':int(price),'date':datetime.strptime(day,'%Y%m%d').date().isoformat(),'name':name,'source':source}
                 quotes[code]=quote;st.session_state.paper_quotes=quotes
                 st.rerun()
             except (DataError,ValueError) as exc:st.error(str(exc))
-        if not configured:st.info('공식 종가 조회에는 DATA_GO_KR_SERVICE_KEY 설정이 필요합니다.')
+        if not configured:st.info('공공데이터포털 키 또는 KIS 모의투자 연결이 필요합니다.')
         quote=paper_price(code)
         if quote:
             st.write(f"{quote['name']} · 종가 {quote['price']:,}원")
@@ -486,13 +554,13 @@ elif page=='매매 연습':
         elif code:st.caption('체결 기준 종가를 조회하세요. 기준일이 5일을 초과한 가격은 사용하지 않습니다.')
     with portfolio:
         st.subheader('모의 보유종목')
-        if ledger['positions'] and st.button('보유종목 평가 종가 새로고침',disabled=not bool(api_key('DATA_GO_KR_SERVICE_KEY'))):
+        if ledger['positions'] and st.button('보유종목 평가 종가 새로고침',disabled=not price_sources_ready()):
             provider=official_client();failures=[]
             with st.spinner('모의 보유종목 종가를 조회합니다…'):
                 for position in ledger['positions']:
                     try:
-                        price,day,name=provider.price(position['code'],today)
-                        quotes[position['code']]={'price':int(price),'date':datetime.strptime(day,'%Y%m%d').date().isoformat(),'name':name}
+                        price,day,name,source=quote_with_fallback(position['code'],provider,today)
+                        quotes[position['code']]={'price':int(price),'date':datetime.strptime(day,'%Y%m%d').date().isoformat(),'name':name,'source':source}
                     except (DataError,ValueError):failures.append(position['code'])
             st.session_state.paper_quotes=quotes
             st.session_state.paper_notice='평가 종가 갱신' + (' · 조회 보류 '+', '.join(failures) if failures else '')
@@ -516,8 +584,8 @@ elif page=='관심종목':
     st.title('관심종목 점검')
     st.html('<div class="pd-intro">저장한 종목의 추세·실적·수급을 한 화면에서 점검하세요.</div>')
     st.caption('일별 종가: 공공데이터포털 · 동기 실적: OpenDART · 수급: KIS 연결 시 · 주문 기능 없음')
-    if not api_key('DATA_GO_KR_SERVICE_KEY'):
-        st.info('연결 설정에서 공공데이터 API 키를 입력하면 관심종목 조회가 열립니다.')
+    if not price_sources_ready():
+        st.info('공공데이터포털 키 또는 KIS 모의투자 연결이 필요합니다.')
         st.stop()
     # Only public ticker codes are put in the bookmark URL; no account or financial payload.
     raw=st.query_params.get('watch','')
@@ -662,7 +730,7 @@ elif page=='투자 근거':
     cache_key='decision_'+code+'_'+market_name
     if refresh:
         if not re.fullmatch(r'[0-9]{6}',code):st.warning('숫자 6자리 종목코드를 입력하세요.')
-        elif not api_key('DATA_GO_KR_SERVICE_KEY'):st.warning('공공데이터포털 시세 키를 연결 설정에서 확인하세요.')
+        elif not price_sources_ready():st.warning('공공데이터포털 키 또는 KIS 모의투자 연결을 확인하세요.')
         else:
             today=datetime.now(ZoneInfo('Asia/Seoul')).date();provider=official_client()
             with st.spinner('공식 시세·실적·수급과 비교 시장을 조회합니다…'):
