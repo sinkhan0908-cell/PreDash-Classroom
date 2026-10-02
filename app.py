@@ -164,7 +164,7 @@ def stock_evidence_charts(item):
         a.metric('조회기간 가격 변화',f"{(latest['종가']/prices[0]['종가']-1)*100:+.1f}%")
         b.metric('20일선 대비',f"{(latest['종가']/latest['20일선']-1)*100:+.1f}%" if latest['20일선'] else '보류')
         st.line_chart(prices,x='날짜',y=['종가','10일선','20일선'],height=280,color=['#214b3a','#a68137','#527dad'])
-        st.caption(f"공공데이터포털 · {prices[0]['날짜']}~{latest['날짜']} · 원 · 거래 관측값 기준 평균 · 수정주가 미확인, 권리락·분할 시 해석 주의")
+        st.caption(f"{item.get('price_source','공공데이터포털')} · {prices[0]['날짜']}~{latest['날짜']} · 원 · 거래 관측값 기준 평균 · 수정주가 미확인, 권리락·분할 시 해석 주의")
     else:st.info('근거 자료 새로고침으로 종가와 이동평균을 조회하세요.')
     financial,investor=st.columns(2)
     with financial:
@@ -537,7 +537,7 @@ elif page=='매매 연습':
         quote=paper_price(code)
         if quote:
             st.write(f"{quote['name']} · 종가 {quote['price']:,}원")
-            st.caption(f"기준일 {quote['date']} · 공공데이터포털 · 장중 체결가가 아닙니다.")
+            st.caption(f"기준일 {quote['date']} · {quote.get('source','공공데이터포털')} · 장중 체결가가 아닙니다.")
             with st.form('paper_trade'):
                 side=st.radio('모의 매매 구분',['매수','매도'],horizontal=True)
                 quantity=st.number_input('수량 (주)',min_value=1,max_value=1_000_000,value=1,step=1)
@@ -742,7 +742,8 @@ elif page=='투자 근거':
                     actual=item.get('benchmark')
                     if actual and actual!=market_name:
                         raise EvidenceError('종목 상장시장은 '+actual+'입니다. 비교 시장을 변경하세요.')
-                    chart=comparison(provider.price_history(code,today),
+                    price_rows,_,_,_=price_history_with_fallback(code,provider,today)
+                    chart=comparison(price_rows,
                         kis_client().index_bars('0001' if market_name=='코스피' else '1001'),code,today)
                 except (BrokerError,DataError,EvidenceError) as exc:chart_error=str(exc)
             st.session_state[cache_key]={'item':item,'chart':chart,'chart_error':chart_error}
@@ -782,7 +783,7 @@ elif page=='투자 근거':
             c.metric('시장 대비 차이',f"{last['stock']-last['market']:+.1f}%p")
             chart=[{'날짜':r['date'],'종목':r['stock'],market_name:r['market']} for r in data['chart']]
             st.line_chart(chart,x='날짜',y=['종목',market_name],height=250,color=['#214b3a','#a68137'])
-            st.caption(f"공통 거래일 {len(chart)}일 · {chart[0]['날짜']}=100 · {chart[-1]['날짜']}까지 · 종목: 공공데이터포털 / 시장: KIS · 배당 미포함 가격 변화")
+            st.caption(f"공통 거래일 {len(chart)}일 · {chart[0]['날짜']}=100 · {chart[-1]['날짜']}까지 · 종목: {item.get('price_source','공공데이터포털')} / 시장: KIS · 배당 미포함 가격 변화")
         else:st.info(data['chart_error'] or '공통 비교 시세 부족')
         if lamp:st.html(f"<div class='pd-badge'>종가 {lamp['close']:,.0f}원 · {lamp['state']} · 10일선 {lamp['ma10']:,.0f} / 20일선 {lamp['ma20']:,.0f} · {lamp['date']}</div>")
     with right:
