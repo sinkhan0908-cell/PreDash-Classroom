@@ -198,6 +198,34 @@ class KIS:
             raise BrokerError('당시 일별 시세를 확인하지 못했습니다.')
         return data['output2']
 
+    def price_history(self, code, as_of):
+        """Return KIS daily closes in the same row shape as public stock data."""
+        if not re.fullmatch(r'\d{6}', code):
+            raise BrokerError('일별 시세를 조회할 종목코드가 올바르지 않습니다.')
+        if not isinstance(as_of, date):
+            raise BrokerError('시세 기준일을 확인할 수 없습니다.')
+        self.authorize()
+        start=as_of-timedelta(days=90)
+        _,data=self.call('GET','/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice',
+            headers={'authorization':'Bearer '+self.token,'appkey':self.key,'appsecret':self.secret,
+                     'tr_id':'FHKST03010100','custtype':'P'},
+            params={'FID_COND_MRKT_DIV_CODE':'J','FID_INPUT_ISCD':code,
+                    'FID_INPUT_DATE_1':start.strftime('%Y%m%d'),
+                    'FID_INPUT_DATE_2':as_of.strftime('%Y%m%d'),
+                    'FID_PERIOD_DIV_CODE':'D','FID_ORG_ADJ_PRC':'1'})
+        if str(data.get('rt_cd'))!='0' or not isinstance(data.get('output2'),list):
+            raise self.result_error(data,'KIS 일별 종가 조회 실패')
+        rows=[]
+        for row in data['output2']:
+            day=str(row.get('stck_bsop_date','')).strip()
+            close=str(row.get('stck_clpr','')).strip()
+            if re.fullmatch(r'\d{8}',day) and close:
+                rows.append({'srtnCd':code,'basDt':day,'clpr':close,
+                             'itmsNm':row.get('hts_kor_isnm') or ''})
+        if not rows:
+            raise BrokerError('KIS 일별 종가 자료가 없습니다.')
+        return rows
+
     def index_bars(self, code, as_of=None):
         """KOSPI/KOSDAQ daily index observations; read-only quotation endpoint."""
         if code not in ('0001','1001'):
