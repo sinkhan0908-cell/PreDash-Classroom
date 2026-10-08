@@ -2,6 +2,7 @@
 import calendar
 import math
 import re
+import statistics
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -151,3 +152,121 @@ def collect(provider, code, asof=None):
             'verification': 'API 구조·단위·중복·재무상태표 등식 점검. 원문 및 실제 API 대조 완료를 뜻하지 않습니다.',
             'data_gaps': [{'year': r['year'], 'report_code': r['report_code'], 'metric': r['metric'], 'reason': r['data_gap']}
                           for r in evidence + opening_equity if r['data_gap']]}
+
+
+def strategy_checks(data, quote=None, quote_date=None, quote_source=None):
+    """Rule-based research leads; thresholds are dashboard settings, not investor quotes."""
+    annual = {}
+    issues = []
+    if data.get('data_gaps'):
+        issues.extend(g['reason'] for g in data['data_gaps'])
+    for row in data.get('rows', []):
+        if row.get('period_type') == '연간' or row.get('metric') in ('부채총계', '자본총계', '지배주주자본'):
+            annual.setdefault(row['year'], {})[row['metric']] = row.get('value')
+    years = sorted(y for y, values in annual.items() if '매출' in values or '지배주주순이익' in values)
+    opening = {r.get('year'): r for r in data.get('opening_equity', [])}
+    checks = []
+
+    def add(group, label, value, unit, condition, period, sources, pending=None):
+        if pending:
+            status, reason = '판정 보류', pending
+        elif value is None:
+            status, reason = '판정 보류', '계산에 필요한 값이 부족합니다.'
+        else:
+            status = '충족' if condition else '미충족'
+            reason = '대시보드 기준 충족' if condition else '대시보드 기준 미달'
+        checks.append({'group': group, 'condition': label, 'value': value, 'unit': unit,
+                       'status': status, 'reason': reason, 'period': period, 'sources': sources})
+
+    sales = [(y, annual[y].get('매출')) for y in years]
+    sales = [(y, v) for y, v in sales if v is not None]
+    sources = [r.get('source') for r in data.get('rows', []) if r.get('metric') == '매출' and r.get('period_type') == '연간']
+    if len(sales) >= 2 and sales[0][1] > 0 and sales[-1][1] > 0:
+        cagr = ((sales[-1][1] / sales[0][1]) ** (1 / (sales[-1][0] - sales[0][0])) - 1) * 100
+        gap = None if len(sales) == sales[-1][0] - sales[0][0] + 1 else '연속 연간 매출 자료 부족'
+    else:
+        cagr, gap = None, '연간 매출 누락 또는 비양수'
+    add('린치 참고', f'매출 CAGR 양수 · {len(sales)}개 결산점', cagr, '%', cagr is not None and cagr > 0,
+        f"{sales[0][0]}~{sales[-1][0]} 연간" if sales else None, sources, gap)
+
+    eps_periods = years[-4:]
+    eps = [(y, annual.get(y, {}).get('기본 EPS')) for y in eps_periods]
+    eps_gap = None
+    eps_cagr = None
+    if len(eps) != 4 or any(v is None for _, v in eps):
+        eps_gap = '연속 4개 연간 EPS 필요'
+    elif any(eps[i][0] + 1 != eps[i + 1][0] for i in range(len(eps) - 1)):
+        eps_gap = '연속 4개 연간 EPS 필요'
+    elif any(v <= 0 for _, v in eps):
+        eps_gap = '적자 또는 0 EPS가 포함되어 CAGR·PEG 계산 보류'
+    else:
+        eps_cagr = ((eps[-1][1] / eps[0][1]) ** (1 / (eps[-1][0] - eps[0][0])) - 1) * 100
+    eps_sources = [r.get('source') for r in data.get('rows', []) if r.get('metric') == '기본 EPS' and r.get('year') in eps_periods]
+    add('린치 참고', 'EPS CAGR 양수 · 최근 4개 연간 EPS', eps_cagr, '%', eps_cagr is not None and eps_cagr > 0,
+        f"{eps_periods[0]}~{eps_periods[-1]} 연간" if eps_periods else None, eps_sources, eps_gap)
+
+    latest_eps = annual.get(years[-1], {}).get('기본 EPS') if years else None
+    per = quote / latest_eps if quote and latest_eps and latest_eps > 0 else None
+    peg = per / eps_cagr if per is not None and eps_cagr is not None and eps_cagr > 0 else None
+    quote_gap = None
+    if eps_gap:
+        quote_gap = eps_gap
+    elif not eps_cagr or eps_cagr <= 0:
+        quote_gap = 'EPS CAGR이 양수가 아니어서 PEG 계산 불가'
+    elif not quote or not quote_date:
+        quote_gap = '같은 화면의 종가 또는 기준일 확인 필요'
+    elif not quote_source:
+        quote_gap = '종가 원문 출처 미확인'
+    elif quote_date < data.get('asof', ''):
+        quote_gap = '종가 기준일이 재무자료 조회일보다 이전'
+    elif not latest_eps or latest_eps <= 0:
+        quote_gap = '최근 연간 EPS가 비양수 또는 누락'
+    quote_sources = list(dict.fromkeys([quote_source] + eps_sources)) if quote_source else eps_sources
+    add('린치 참고', 'PEG ≤ 1 · 기준일 종가 ÷ 최근 연간 EPS ÷ EPS CAGR(%)', peg, '배수', peg is not None and peg <= 1,
+        f"종가 {quote_date or '미확인'} / EPS {years[-1] if years else '미확인'}년", quote_sources, quote_gap)
+
+    recent = years[-5:]
+    roes, roe_gap, roe_sources = [], None, []
+    for y in recent:
+        p = annual.get(y, {})
+        beginning = opening.get(y, {})
+        end_equity = p.get('지배주주자본')
+        begin_equity = beginning.get('value')
+        if not beginning or beginning.get('data_gap') or begin_equity is None or end_equity is None or p.get('지배주주순이익') is None:
+            roe_gap = f'{y}년 이익 또는 기초·기말 지배주주자본 누락'
+            break
+        if begin_equity <= 0 or end_equity <= 0:
+            roe_gap = f'{y}년 기초 또는 기말 지배주주자본 비양수'
+            break
+        roes.append(100 * p['지배주주순이익'] / ((begin_equity + end_equity) / 2))
+        roe_sources.extend([beginning.get('source')] + [r.get('source') for r in data.get('rows', [])
+                            if r.get('year') == y and r.get('metric') in ('지배주주자본', '지배주주순이익')])
+    if len(recent) != 5 or (recent and recent[-1] - recent[0] != 4):
+        roe_gap = '연속 5개 연간 재무자료 필요'
+    median_roe = statistics.median(roes) if len(roes) == 5 and not roe_gap else None
+    add('버핏 참고', '5년 ROE 중앙값 ≥ 15% · 지배주주순이익/평균 지배주주자본', median_roe, '%',
+        median_roe is not None and median_roe >= 15, f'{recent[0]}~{recent[-1]} 연간' if recent else None,
+        list(dict.fromkeys(roe_sources)), roe_gap)
+
+    def all_positive(metric, label):
+        vals = [(y, annual.get(y, {}).get(metric)) for y in recent]
+        missing = [y for y, v in vals if v is None]
+        value = min((v for _, v in vals), default=None) if not missing else None
+        gap = f'{missing[0]}년 {metric} 누락' if missing else ('연속 5개 연간 자료 부족' if len(recent) != 5 or (recent and recent[-1] - recent[0] != 4) else None)
+        src = [r.get('source') for r in data.get('rows', []) if r.get('year') in recent and r.get('metric') == metric]
+        add('버핏 참고', label, value, '원', value is not None and value > 0,
+            f'{recent[0]}~{recent[-1]} 연간' if recent else None, src, gap)
+    all_positive('영업이익', '최근 5년 영업이익 모두 양수')
+    all_positive('영업현금흐름', '최근 5년 영업현금흐름 모두 양수')
+
+    latest = annual.get(years[-1], {}) if years else {}
+    debt, equity = latest.get('부채총계'), latest.get('자본총계')
+    debt_ratio = debt / equity * 100 if debt is not None and equity is not None and equity > 0 else None
+    fcf = None
+    capex = latest.get('유형자산 취득'), latest.get('무형자산 취득')
+    if latest.get('영업현금흐름') is not None and all(v is not None for v in capex):
+        fcf = latest['영업현금흐름'] - sum(capex)
+    return {'checks': checks, 'reference_metrics': {'latest_annual_year': years[-1] if years else None,
+            'debt_to_equity_pct': debt_ratio, 'simple_fcf_won': fcf,
+            'reference_period': f'{years[-1]} 연간' if years else None},
+            'note': '대시보드 자체 조사 기준이며 대가의 공식·추천이 아닙니다. 정성 요인 및 공시 원문 검증은 별도입니다.'}

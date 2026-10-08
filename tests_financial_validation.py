@@ -6,7 +6,7 @@ from contextlib import nullcontext
 from datetime import date
 from unittest.mock import Mock
 
-from predash.financial_validation import parse_statement, collect
+from predash.financial_validation import parse_statement, collect, strategy_checks
 from predash.official import Official, DataError
 
 
@@ -135,6 +135,42 @@ class FinancialValidationTests(unittest.TestCase):
         self.assertEqual(opening[2021]['amount_field'], 'frmtrm_amount')
         self.assertIsNone(opening[2022]['value'])
         self.assertTrue(any(g['metric'] == '기초 지배주주자본' and g['year'] == 2022 for g in data['data_gaps']))
+
+    def test_strategy_checks_use_annuals_and_hold_eps_with_loss_year(self):
+        rows = []
+        opening = []
+        for year, eps, profit in [(2021, 100, 10), (2022, 150, 15), (2023, -10, -2), (2024, 200, 20), (2025, 300, 30)]:
+            for metric, value in [('매출', year * 100), ('기본 EPS', eps), ('지배주주순이익', profit),
+                                  ('지배주주자본', 100), ('영업이익', profit), ('영업현금흐름', 25),
+                                  ('부채총계', 20), ('자본총계', 100), ('유형자산 취득', 4), ('무형자산 취득', 1)]:
+                rows.append({'metric': metric, 'value': value, 'year': year, 'period_type': '연간',
+                             'source': f'https://dart.fss.or.kr/{year}'})
+            opening.append({'year': year, 'value': 90, 'source': f'https://dart.fss.or.kr/open{year}'})
+        result = strategy_checks({'asof': '2026-10-08', 'rows': rows, 'opening_equity': opening,
+                                  'data_gaps': []}, 1000, '2026-10-08', 'official close')
+        by_name = {c['condition']: c for c in result['checks']}
+        self.assertEqual(by_name['EPS CAGR 양수 · 최근 4개 연간 EPS']['status'], '판정 보류')
+        self.assertIn('적자', by_name['EPS CAGR 양수 · 최근 4개 연간 EPS']['reason'])
+        self.assertEqual(by_name['PEG ≤ 1 · 기준일 종가 ÷ 최근 연간 EPS ÷ EPS CAGR(%)']['status'], '판정 보류')
+        self.assertEqual(by_name['5년 ROE 중앙값 ≥ 15% · 지배주주순이익/평균 지배주주자본']['status'], '충족')
+
+    def test_strategy_holds_missing_opening_equity_and_price(self):
+        result = strategy_checks({'asof': '2026-10-08', 'rows': [], 'opening_equity': [], 'data_gaps': []})
+        self.assertTrue(all(c['status'] == '판정 보류' for c in result['checks'] if c['group'] == '린치 참고'))
+
+    def test_strategy_requires_consecutive_years(self):
+        rows = []
+        opening = []
+        for year in (2021, 2022, 2024, 2025, 2026):
+            for metric, value in [('매출', 100), ('기본 EPS', 100), ('지배주주순이익', 10),
+                                  ('지배주주자본', 100), ('영업이익', 10), ('영업현금흐름', 10)]:
+                rows.append({'metric': metric, 'value': value, 'year': year, 'period_type': '연간'})
+            opening.append({'year': year, 'value': 100})
+        result = strategy_checks({'asof': '2026-10-08', 'rows': rows, 'opening_equity': opening, 'data_gaps': []})
+        by_name = {c['condition']: c for c in result['checks']}
+        self.assertEqual(by_name['EPS CAGR 양수 · 최근 4개 연간 EPS']['status'], '판정 보류')
+        self.assertEqual(by_name['5년 ROE 중앙값 ≥ 15% · 지배주주순이익/평균 지배주주자본']['status'], '판정 보류')
+        self.assertEqual(by_name['최근 5년 영업이익 모두 양수']['status'], '판정 보류')
 
 
 if __name__ == '__main__':
