@@ -18,6 +18,7 @@ from predash.macro import fetch_vix,relative,benchmark,MacroError
 from predash.analysis import review
 from predash.health import status as holding_status
 from predash.official import Official, DataError
+from predash.financial_validation import collect as collect_financial_validation
 import predash.trades as trade_module
 # Streamlit can keep the previous module in memory after updating app.py.
 # Reload only an older interface, before binding functions and exception types.
@@ -143,6 +144,40 @@ def financial_comparison(m):
             rows.append({'기간':label,'항목':name,f"{m['year']-1}년 (억원)":prior,f"{m['year']}년 (억원)":current,'동기 증가율':f'{growth:+.1f}%' if growth is not None else '산정 보류'})
     st.dataframe(rows,hide_index=True,use_container_width=True)
     st.caption(f"OpenDART · {m['basis']} · 조회 {m['fetched']} · 단독 3개월은 동일 공시의 당기금액/전기 분기금액 사용 · 적자/0 기저 증가율 보류")
+
+def financial_validation_panel(code, context):
+    with st.expander(f'{code} · 재무 데이터 검증 · 최근 공시와 5개 결산연도'):
+        st.caption('DART 재무정보만 조회합니다. 주가·KIS 연결과 독립적으로 작동합니다. 금액은 원, EPS는 원/주입니다.')
+        cache_key = 'financial_validation_' + code
+        if st.button('최신 재무자료 조회·검증', key=context + '_validate_' + code):
+            st.session_state.pop(cache_key, None)
+            if not api_key('DART_CRTFC_KEY'):
+                st.warning('DART 연결 설정을 확인하세요.')
+            else:
+                try:
+                    with st.spinner('최근 공시 및 연간 재무제표를 확인합니다.'):
+                        st.session_state[cache_key] = collect_financial_validation(official_client(), code)
+                except DataError as exc:
+                    st.warning(str(exc))
+        data = st.session_state.get(cache_key)
+        if not data:
+            st.caption('조회 버튼을 누르면 검증표가 표시됩니다. 조회 실패 시 이전 값을 최신 값으로 표시하지 않습니다.')
+            return
+        st.caption(f"{data['name']} · {data['basis']} · 조회 {data['fetched_at']}")
+        if data['asof'] != datetime.now(ZoneInfo('Asia/Seoul')).date().isoformat():
+            st.warning('이전 날짜의 조회 결과입니다. 최신 재무자료 조회·검증을 눌러 갱신하세요.')
+        st.info(data['verification'])
+        rows = [{'사업연도': r['year'], '항목': r['metric'], '값': r['value'], '단위': r['unit'],
+                 '기간 시작': r['period_start'], '기준일': r['period_end'], '기간 구분': r['period_type'],
+                 '회계 기준': r['basis'], '상태': r['status'], '보류 사유': r['data_gap'], '원문': r['source']}
+                for r in data['rows']]
+        st.dataframe(rows, hide_index=True, use_container_width=True)
+        st.caption('빈 값은 0이 아닙니다. 원문 대조 전에는 투자자 전략 점수·PER·PEG를 산출하지 않습니다. 부채총계와 차입금은 다릅니다.')
+        st.download_button('공개 재무 검증 결과 내려받기',
+                           json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False),
+                           file_name=f'financial-validation-{code}-{data["asof"]}.json',
+                           mime='application/json', key=context + '_validation_download_' + code)
+
 
 def stock_evidence_charts(item):
     if item.get('relative'):
@@ -669,6 +704,7 @@ elif page=='관심종목':
     elif not results:st.info('저장된 종목을 확인했습니다. 목록 전체 새로고침을 누르면 최신 공식 자료를 가져옵니다.')
     for code in codes:
         item=results.get(code)
+        financial_validation_panel(code, 'watch')
         display_name=st.session_state.watch_names.get(code,code)
         if item and item.get('name')!=code:display_name=item['name']
         elif item:item['name']=display_name
@@ -1169,6 +1205,7 @@ else:
                 f"<div><small>평가액</small><b>{p['value']:,.0f}원</b></div><div><small>평가손익</small>{signed(int(p['pnl']),'원')}</div>"
                 f"<div><small>평균 매입가 / 현재가</small><b>{p['average_cost']:,.0f} / {p['price']:,.0f}원</b></div></div>"
                 f"<div class='pd-holding-foot'>손익률 {signed(health['rate'],'%')} · 영업이익 증가율 {signed(health['growth'],'%')}<br>{html.escape(health['summary'])}<br>{earnings}</div></div>")
+            financial_validation_panel(p['code'], 'holding')
             with st.expander(f"{p['name']} · 재무·공시 근거"):
                 st.caption(f"한국투자증권 잔고 {snap['fetched']} · 평가액 대비 비중 · 주문 기능 없음")
                 if st.button('종목·시장 1·5·20일 성과 조회',key='holding_relative_'+p['code']):

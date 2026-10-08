@@ -338,7 +338,7 @@ class Official:
         row = self.price_rows.get((code, asof.isoformat()), {})
         report["shares"] = number(row.get("lstgStCnt"))
         report["market_cap"] = number(row.get("mrktTotAmt"))
-        report["warnings"] = []
+        report.setdefault("warnings", [])
         try:
             info = self.dart("company.json", corp_code=corp) or {}
             report["company"] = {k: info.get(k, "") for k in ["corp_name", "induty_code", "hm_url", "est_dt", "acc_mt"]}
@@ -375,7 +375,13 @@ class Official:
     def report(self, code, year, asof=None):
         asof = asof or date.today()
         corp = self.corp(code)
-        price, price_date, name = self.price(code, asof)
+        warnings = []
+        try:
+            price, price_date, name = self.price(code, asof)
+        except DataError as exc:
+            price, price_date = None, None
+            name = self.names.get(code, code)
+            warnings.append('시세 조회 보류 · ' + str(exc))
         annuals = None
         for basis in ("CFS", "OFS"):
             series = [self.annual(corp, y, basis) for y in range(year - 2, year + 1)]
@@ -384,12 +390,16 @@ class Official:
                 break
         if annuals is None:
             raise DataError("동일 연결/별도 기준의 3개년 보고서가 부족합니다. 사업연도를 바꿔보세요.")
-        disclosures = self.dart("list.json", corp_code=corp,
-            bgn_de=(asof - timedelta(days=90)).strftime("%Y%m%d"), end_de=asof.strftime("%Y%m%d"), page_count=20)
+        try:
+            disclosures = self.dart("list.json", corp_code=corp,
+                bgn_de=(asof - timedelta(days=90)).strftime("%Y%m%d"), end_de=asof.strftime("%Y%m%d"), page_count=20)
+        except DataError as exc:
+            disclosures = None
+            warnings.append('공시 목록 조회 보류 · ' + str(exc))
         try:metrics=self.latest_period_metrics(code,asof)
         except DataError:metrics=None
         return {"metrics":metrics,"code": code, "name": name, "price": price, "price_date": price_date,
-                "basis": basis, "years": annuals, "fetched": asof.isoformat(), "sample": False,
+                "basis": basis, "years": annuals, "fetched": asof.isoformat(), "sample": False, "warnings": warnings,
                 "disclosures": [{"title": r["report_nm"], "date": r["rcept_dt"],
                     "url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=" + r["rcept_no"]} for r in (disclosures or {}).get("list", [])]}
 
