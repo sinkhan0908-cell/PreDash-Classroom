@@ -134,8 +134,20 @@ def collect(provider, code, asof=None):
         evidence.extend(parse_statement(fetch(annual_year, '11011', basis), annual_year, '11011', basis, asof.isoformat(), december))
     for row in evidence:
         row['fetched_at'] = fetched
-    return {'schema_version': 1, 'code': code, 'name': company.get('corp_name', code),
+    opening_equity = []
+    for annual_year in range(last_annual, last_annual - 5, -1):
+        # Same filing's comparative balance captures restatements and avoids mixing vintages.
+        annual_rows = fetch(annual_year, '11011', basis)
+        comparative = [{**r, 'thstrm_amount': r.get('frmtrm_amount')} for r in annual_rows]
+        parsed = parse_statement(comparative, annual_year, '11011', basis, asof.isoformat(), december)
+        opening = next(r for r in parsed if r['metric'] == '지배주주자본')
+        opening.update(metric='기초 지배주주자본', amount_field='frmtrm_amount', fetched_at=fetched,
+                       period_end=f'{annual_year-1}-12-31' if december else None,
+                       period_type='전기말 · 당기 기초자본', role='opening_equity')
+        opening_equity.append(opening)
+    return {'schema_version': 2, 'code': code, 'name': company.get('corp_name', code),
             'asof': asof.isoformat(), 'fetched_at': fetched, 'basis': basis, 'rows': evidence,
+            'opening_equity': opening_equity,
             'verification': 'API 구조·단위·중복·재무상태표 등식 점검. 원문 및 실제 API 대조 완료를 뜻하지 않습니다.',
             'data_gaps': [{'year': r['year'], 'report_code': r['report_code'], 'metric': r['metric'], 'reason': r['data_gap']}
-                          for r in evidence if r['data_gap']]}
+                          for r in evidence + opening_equity if r['data_gap']]}

@@ -113,6 +113,29 @@ class FinancialValidationTests(unittest.TestCase):
         self.assertEqual(data['metrics']['revenue'], 100)
         self.assertEqual(len(data['warnings']), 2)
 
+    def test_opening_equity_from_same_annual_filing_not_older_vintage(self):
+        provider = Mock()
+        provider.corp.return_value = '00126380'
+        def dart(endpoint, **params):
+            if endpoint == 'company.json':
+                return {'acc_mt': '12'}
+            year = int(params['bsns_year'])
+            if params['reprt_code'] != '11011' or year > 2025:
+                return None
+            return {'list': [dict(row('ifrs-full_EquityAttributableToOwnersOfParent', '200', 'BS',
+                                     frmtrm_amount='150' if year != 2022 else ''),
+                                 rcept_no=f'{year+1}0315000001')]}
+        provider.dart.side_effect = dart
+        data = collect(provider, '005930', date(2026, 4, 8))
+        opening = {r['year']: r for r in data['opening_equity']}
+        self.assertEqual(len(opening), 5)
+        self.assertEqual(opening[2021]['period_end'], '2020-12-31')
+        self.assertEqual(opening[2021]['value'], 150)
+        self.assertEqual(opening[2021]['receipt'], '20220315000001')
+        self.assertEqual(opening[2021]['amount_field'], 'frmtrm_amount')
+        self.assertIsNone(opening[2022]['value'])
+        self.assertTrue(any(g['metric'] == '기초 지배주주자본' and g['year'] == 2022 for g in data['data_gaps']))
+
 
 if __name__ == '__main__':
     unittest.main()

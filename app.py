@@ -170,8 +170,11 @@ def financial_validation_panel(code, context):
         rows = [{'사업연도': r['year'], '항목': r['metric'], '값': r['value'], '단위': r['unit'],
                  '기간 시작': r['period_start'], '기준일': r['period_end'], '기간 구분': r['period_type'],
                  '회계 기준': r['basis'], '상태': r['status'], '보류 사유': r['data_gap'], '원문': r['source']}
-                for r in data['rows']]
+                for r in data['rows'] + data.get('opening_equity', [])]
         st.dataframe(rows, hide_index=True, use_container_width=True)
+        st.caption('기초 지배주주자본은 해당 연간 공시의 전기말 값입니다. 5개년 ROE 계산에 필요한 기초자본을 같은 공시 기준으로 수집합니다.')
+        if data.get('schema_version', 1) < 2:
+            st.info('기초자본을 추가하려면 최신 재무자료 조회·검증을 다시 눌러주세요.')
         st.caption('빈 값은 0이 아닙니다. 원문 대조 전에는 투자자 전략 점수·PER·PEG를 산출하지 않습니다. 부채총계와 차입금은 다릅니다.')
         st.download_button('공개 재무 검증 결과 내려받기',
                            json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False),
