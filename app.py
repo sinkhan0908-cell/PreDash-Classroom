@@ -21,7 +21,13 @@ from predash.macro import fetch_vix,relative,benchmark,MacroError
 from predash.analysis import review
 from predash.health import status as holding_status
 from predash.official import Official, DataError
-from predash.financial_validation import collect as collect_financial_validation, strategy_checks, collection_status, export_validation
+import predash.financial_validation as financial_validation_module
+if not hasattr(financial_validation_module, 'quote_date_check'):
+    financial_validation_module = importlib.reload(financial_validation_module)
+collect_financial_validation = financial_validation_module.collect
+strategy_checks = financial_validation_module.strategy_checks
+collection_status = financial_validation_module.collection_status
+export_validation = financial_validation_module.export_validation
 import predash.trades as trade_module
 # Streamlit can keep the previous module in memory after updating app.py.
 # Reload only an older interface, before binding functions and exception types.
@@ -154,7 +160,7 @@ def financial_validation_panel(code, context, market_item=None):
         cache_key = 'financial_validation_' + code
         if st.button('최신 재무자료 조회·검증', key=context + '_validate_' + code):
             st.session_state.pop(cache_key, None)
-            st.session_state.pop('strategy_checks_v4_' + code, None)
+            st.session_state.pop('strategy_checks_v5_' + code, None)
             if not api_key('DART_CRTFC_KEY'):
                 st.warning('DART 연결 설정을 확인하세요.')
             else:
@@ -183,7 +189,7 @@ def financial_validation_panel(code, context, market_item=None):
         if data.get('schema_version', 1) < 2:
             st.info('기초자본을 추가하려면 최신 재무자료 조회·검증을 다시 눌러주세요.')
         st.caption('빈 값은 0이 아닙니다. 아래 조건은 공개 자료를 바탕으로 만든 조사 후보 규칙입니다. 부채총계와 차입금은 다릅니다.')
-        strategy_key = 'strategy_checks_v4_' + code
+        strategy_key = 'strategy_checks_v5_' + code
         if st.button('린치·버핏 조사후보 조건 계산', key=context + '_strategy_' + code):
             st.session_state.pop(strategy_key, None)
             quote = market_item.get('lamp', {}).get('close') if market_item and market_item.get('lamp') else None
@@ -207,6 +213,7 @@ def financial_validation_panel(code, context, market_item=None):
             st.caption(f"참고 지표 · {ref['reference_period'] or '연간 자료 없음'} · 부채/자본 {ref['debt_to_equity_pct']:.1f}%" if ref['debt_to_equity_pct'] is not None else f"참고 지표 · {ref['reference_period'] or '연간 자료 없음'} · 부채/자본 보류")
             if ref['simple_fcf_won'] is not None:
                 st.caption(f"단순 FCF 참고 {ref['simple_fcf_won']/1e8:,.1f}억원 · 영업현금흐름-유형·무형자산 취득 · 전략 통과 기준 아님")
+            st.caption('PEG는 최근 7일 이내의 표시된 날짜 종가로 판정하며, 최신 거래일 종가라고 보장하지 않습니다. 7일 초과·미래 날짜·EPS 공시 전 가격은 보류합니다.')
             st.caption('정량 조건만 계산합니다. 해자·경영진·장기 성장성은 수동 조사 항목입니다. PEG는 최신 연간 EPS와 조회된 종가가 있어야 계산됩니다. 종가·EPS의 분할·수정 이력은 원문 확인이 필요합니다.')
         st.caption('내려받는 파일에는 재무자료와 계산한 전략 결과·평가 시각·사용 종가가 함께 담깁니다. 계산 전에는 전략 결과가 null로 저장됩니다.')
         st.download_button('재무자료·전략 결과 내려받기',

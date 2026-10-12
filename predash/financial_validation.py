@@ -34,6 +34,25 @@ def collection_status(value, reason=None):
     return '자료 부족'
 
 
+def quote_date_check(asof, quote_date, receipt=None, max_age_days=7):
+    """A dated recent close is usable; this does not assert it is the latest market close."""
+    try:
+        reference = date.fromisoformat(asof)
+        closing = date.fromisoformat(quote_date)
+    except (TypeError, ValueError):
+        return '종가 또는 조회 기준일 형식 확인 필요', None
+    age = (reference - closing).days
+    if age < 0:
+        return '종가 기준일이 조회일 이후: 날짜 불일치 확인 필요', age
+    if age > max_age_days:
+        return f'종가가 {age}일 이전 자료: 허용 범위 {max_age_days}일 초과, 시세 재조회 필요', age
+    if receipt and re.fullmatch(r'\d{14}', str(receipt)):
+        published = date(int(receipt[:4]), int(receipt[4:6]), int(receipt[6:8]))
+        if closing < published:
+            return '종가가 사용한 연간 EPS 공시 전 날짜: 시점 불일치 확인 필요', age
+    return None, age
+
+
 def numeric(raw):
     text = str(raw).strip().replace(',', '')
     if text.startswith('(') and text.endswith(')'):
@@ -243,7 +262,7 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None):
     latest_eps = annual.get(years[-1], {}).get('기본 EPS') if years else None
     per = quote / latest_eps if quote and latest_eps and latest_eps > 0 else None
     peg = per / eps_cagr if per is not None and eps_cagr is not None and eps_cagr > 0 else None
-    quote_gap = None
+    quote_gap, quote_age = None, None
     if eps_gap:
         quote_gap = eps_gap
     elif not eps_cagr or eps_cagr <= 0:
@@ -252,13 +271,18 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None):
         quote_gap = '같은 화면의 종가 또는 기준일 확인 필요'
     elif not quote_source:
         quote_gap = '종가 원문 출처 미확인'
-    elif quote_date < data.get('asof', ''):
-        quote_gap = '종가 기준일이 재무자료 조회일보다 이전'
     elif not latest_eps or latest_eps <= 0:
         quote_gap = '최근 연간 EPS가 비양수 또는 누락'
+    else:
+        eps_receipt = next((r.get('receipt') for r in data.get('rows', [])
+                            if r.get('year') == years[-1] and r.get('metric') == '기본 EPS'
+                            and r.get('report_code') == '11011'), None)
+        quote_gap, quote_age = quote_date_check(data.get('asof'), quote_date, eps_receipt)
     quote_sources = list(dict.fromkeys([quote_source] + eps_sources)) if quote_source else eps_sources
     add('린치 참고', 'PEG ≤ 1 · 기준일 종가 ÷ 최근 연간 EPS ÷ EPS CAGR(%)', peg, '배수', peg is not None and peg <= 1,
         f"종가 {quote_date or '미확인'} / EPS {years[-1] if years else '미확인'}년", quote_sources, quote_gap)
+    if quote_age is not None and not quote_gap:
+        checks[-1]['reason'] += f' · {quote_date} 종가 기준 · 조회일 대비 {quote_age}일 이전'
 
     recent = years[-5:]
     roes, roe_gap, roe_sources = [], None, []
@@ -306,9 +330,11 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None):
                'categories': {category: sum(c['reason_type'] == category for c in checks)
                               for category in ('데이터 부족', '공식 적용 불가', '원문 확인 필요')},
                'annual_period': f'{years[0]}~{years[-1]}년 연간' if years else '연간 자료 없음'}
-    return {'rule_version': 1, 'code': data.get('code'), 'financial_fetched_at': data.get('fetched_at'),
+    return {'rule_version': 2, 'code': data.get('code'), 'financial_fetched_at': data.get('fetched_at'),
             'evaluated_at': datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds'),
-            'quote_input': {'close': quote, 'date': quote_date, 'source': quote_source},
+            'quote_input': {'close': quote, 'date': quote_date, 'source': quote_source,
+                            'age_calendar_days': quote_age, 'max_age_calendar_days': 7,
+                            'basis': '표시된 날짜 종가 기준 · 최신 거래일 여부 미확인'},
             'checks': checks, 'summary': summary, 'reference_metrics': {'latest_annual_year': years[-1] if years else None,
             'debt_to_equity_pct': debt_ratio, 'simple_fcf_won': fcf,
             'reference_period': f'{years[-1]} 연간' if years else None},

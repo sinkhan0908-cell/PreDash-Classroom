@@ -6,7 +6,7 @@ from contextlib import nullcontext
 from datetime import date
 from unittest.mock import Mock
 
-from predash.financial_validation import parse_statement, collect, strategy_checks, collection_status, export_validation
+from predash.financial_validation import parse_statement, collect, strategy_checks, collection_status, export_validation, quote_date_check
 from predash.official import Official, DataError
 
 
@@ -73,7 +73,7 @@ class FinancialValidationTests(unittest.TestCase):
         node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'financial_validation_panel')
         st = Mock()
         st.session_state = {'financial_validation_005930': {'old': 'result'},
-                            'strategy_checks_v4_005930': {'old': 'strategy'}}
+                            'strategy_checks_v5_005930': {'old': 'strategy'}}
         st.expander.return_value = nullcontext()
         st.spinner.return_value = nullcontext()
         st.button.return_value = True
@@ -82,7 +82,7 @@ class FinancialValidationTests(unittest.TestCase):
         exec(compile(ast.Module(body=[node], type_ignores=[]), 'app.py', 'exec'), namespace)
         namespace['financial_validation_panel']('005930', 'watch')
         self.assertNotIn('financial_validation_005930', st.session_state)
-        self.assertNotIn('strategy_checks_v4_005930', st.session_state)
+        self.assertNotIn('strategy_checks_v5_005930', st.session_state)
         st.warning.assert_called_once_with('조회 실패')
 
     def test_five_years_same_basis_and_no_price_calls(self):
@@ -190,6 +190,14 @@ class FinancialValidationTests(unittest.TestCase):
         self.assertIsNone(export_validation(data, old)['strategy_result'])
         wrong_stock = {'code': '000660', 'financial_fetched_at': 'new'}
         self.assertIsNone(export_validation(data, wrong_stock)['strategy_result'])
+
+    def test_recent_dated_close_works_across_calendar_days(self):
+        self.assertEqual(quote_date_check('2026-10-12', '2026-10-08', '20260319001417'), (None, 4))
+        self.assertIsNone(quote_date_check('2026-10-12', '2026-10-05')[0])
+        self.assertIn('초과', quote_date_check('2026-10-12', '2026-10-04')[0])
+        self.assertIn('이후', quote_date_check('2026-10-12', '2026-10-13')[0])
+        self.assertIn('공시 전', quote_date_check('2026-10-12', '2026-10-08', '20261009000001')[0])
+        self.assertTrue(quote_date_check('2026-10-12', 'bad-date')[0])
 
     def test_strategy_requires_consecutive_years(self):
         rows = []
