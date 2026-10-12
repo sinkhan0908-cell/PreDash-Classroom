@@ -13,7 +13,10 @@ import predash.kis as kis_module
 if not hasattr(kis_module.KIS,'market_flow'):
     kis_module=importlib.reload(kis_module)
 KIS, BrokerError = kis_module.KIS, kis_module.BrokerError
-from predash.classroom import account_settings, connection_form
+import predash.classroom as classroom_module
+if not hasattr(classroom_module, 'resolve_settings'):
+    classroom_module = importlib.reload(classroom_module)
+account_settings, connection_form = classroom_module.account_settings, classroom_module.connection_form
 from predash.macro import fetch_vix,relative,benchmark,MacroError
 from predash.analysis import review
 from predash.health import status as holding_status
@@ -922,7 +925,7 @@ elif page=='연결 설정':
 
     connected=sum(bool(api_key(key)) for _,_,key,_,_ in api_specs)
     kis_connected=all(account_settings()[k] for k in ('key','secret','cano','product'))
-    st.html(f"<div class='pd-summary'><div><span>공공 API</span><strong>{connected}/4</strong><small>필요한 항목만 연결</small></div><div><span>증권사 KIS</span><strong>{'연결됨' if kis_connected else '미연결'}</strong><small>현재 세션 전용</small></div><div><span>저장 방식</span><strong>세션 보호</strong><small>로그아웃 시 입력 키 삭제</small></div></div>")
+    st.html(f"<div class='pd-summary'><div><span>공공 API</span><strong>{connected}/4</strong><small>필요한 항목만 연결</small></div><div><span>증권사 KIS</span><strong>{'연결됨' if kis_connected and st.session_state.get('classroom_credentials') else '설정됨' if kis_connected else '미연결'}</strong><small>화면 입력 또는 Secrets</small></div><div><span>저장 방식</span><strong>화면·Secrets</strong><small>화면 입력은 로그아웃 시 삭제</small></div></div>")
 
     st.subheader('01 · 공공 데이터 API')
     st.caption('수강 중에는 아래에서 바로 입력할 수 있습니다. 장기 사용은 본인 Streamlit Secrets에 저장하면 매번 다시 입력할 필요가 없습니다.')
