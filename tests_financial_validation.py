@@ -6,7 +6,7 @@ from contextlib import nullcontext
 from datetime import date
 from unittest.mock import Mock
 
-from predash.financial_validation import parse_statement, collect, strategy_checks
+from predash.financial_validation import parse_statement, collect, strategy_checks, collection_status
 from predash.official import Official, DataError
 
 
@@ -72,7 +72,8 @@ class FinancialValidationTests(unittest.TestCase):
         tree = ast.parse(Path('app.py').read_text())
         node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'financial_validation_panel')
         st = Mock()
-        st.session_state = {'financial_validation_005930': {'old': 'result'}}
+        st.session_state = {'financial_validation_005930': {'old': 'result'},
+                            'strategy_checks_v3_005930': {'old': 'strategy'}}
         st.expander.return_value = nullcontext()
         st.spinner.return_value = nullcontext()
         st.button.return_value = True
@@ -81,6 +82,7 @@ class FinancialValidationTests(unittest.TestCase):
         exec(compile(ast.Module(body=[node], type_ignores=[]), 'app.py', 'exec'), namespace)
         namespace['financial_validation_panel']('005930', 'watch')
         self.assertNotIn('financial_validation_005930', st.session_state)
+        self.assertNotIn('strategy_checks_v3_005930', st.session_state)
         st.warning.assert_called_once_with('조회 실패')
 
     def test_five_years_same_basis_and_no_price_calls(self):
@@ -160,6 +162,13 @@ class FinancialValidationTests(unittest.TestCase):
     def test_strategy_holds_missing_opening_equity_and_price(self):
         result = strategy_checks({'asof': '2026-10-08', 'rows': [], 'opening_equity': [], 'data_gaps': []})
         self.assertTrue(all(c['status'] == '판정 보류' for c in result['checks'] if c['group'] == '린치 참고'))
+
+    def test_normal_collection_does_not_demand_manual_comparison(self):
+        self.assertEqual(collection_status(0), 'DART 수집 정상')
+        self.assertEqual(collection_status(-1), 'DART 수집 정상')
+        self.assertEqual(collection_status(None, '계정 누락'), '자료 부족')
+        self.assertEqual(collection_status(None, '동일 계정 값 서로 다름'), '확인 필요')
+        self.assertEqual(collection_status(None, 'KRW 통화 확인 실패'), '확인 필요')
 
     def test_strategy_requires_consecutive_years(self):
         rows = []

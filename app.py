@@ -21,7 +21,7 @@ from predash.macro import fetch_vix,relative,benchmark,MacroError
 from predash.analysis import review
 from predash.health import status as holding_status
 from predash.official import Official, DataError
-from predash.financial_validation import collect as collect_financial_validation, strategy_checks
+from predash.financial_validation import collect as collect_financial_validation, strategy_checks, collection_status
 import predash.trades as trade_module
 # Streamlit can keep the previous module in memory after updating app.py.
 # Reload only an older interface, before binding functions and exception types.
@@ -154,7 +154,7 @@ def financial_validation_panel(code, context, market_item=None):
         cache_key = 'financial_validation_' + code
         if st.button('최신 재무자료 조회·검증', key=context + '_validate_' + code):
             st.session_state.pop(cache_key, None)
-            st.session_state.pop('strategy_checks_v2_' + code, None)
+            st.session_state.pop('strategy_checks_v3_' + code, None)
             if not api_key('DART_CRTFC_KEY'):
                 st.warning('DART 연결 설정을 확인하세요.')
             else:
@@ -170,17 +170,20 @@ def financial_validation_panel(code, context, market_item=None):
         st.caption(f"{data['name']} · {data['basis']} · 조회 {data['fetched_at']}")
         if data['asof'] != datetime.now(ZoneInfo('Asia/Seoul')).date().isoformat():
             st.warning('이전 날짜의 조회 결과입니다. 최신 재무자료 조회·검증을 눌러 갱신하세요.')
-        st.info(data['verification'])
+        st.caption('DART 수집 정상: 공식 API의 숫자·통화·기간 자동 점검 통과. 모든 값을 사람이 원문과 대조했다는 뜻은 아닙니다.')
+        st.caption('확인 필요는 실제 금액·통화·기간 충돌을 발견한 항목입니다. 원문 링크에서 근거를 확인할 수 있습니다.')
+        if data.get('data_gaps'):
+            st.warning(f"예외 항목 {len(data['data_gaps'])}개 · 아래 확인 사유를 참고하세요.")
         rows = [{'사업연도': r['year'], '항목': r['metric'], '값': r['value'], '단위': r['unit'],
                  '기간 시작': r['period_start'], '기준일': r['period_end'], '기간 구분': r['period_type'],
-                 '회계 기준': r['basis'], '상태': r['status'], '보류 사유': r['data_gap'], '원문': r['source']}
+                 '회계 기준': r['basis'], '상태': collection_status(r.get('value'), r.get('data_gap')), '확인 사유': r['data_gap'], '원문': r['source']}
                 for r in data['rows'] + data.get('opening_equity', [])]
         st.dataframe(rows, hide_index=True, use_container_width=True)
         st.caption('기초 지배주주자본은 해당 연간 공시의 전기말 값입니다. 5개년 ROE 계산에 필요한 기초자본을 같은 공시 기준으로 수집합니다.')
         if data.get('schema_version', 1) < 2:
             st.info('기초자본을 추가하려면 최신 재무자료 조회·검증을 다시 눌러주세요.')
         st.caption('빈 값은 0이 아닙니다. 아래 조건은 공개 자료를 바탕으로 만든 조사 후보 규칙입니다. 부채총계와 차입금은 다릅니다.')
-        strategy_key = 'strategy_checks_v2_' + code
+        strategy_key = 'strategy_checks_v3_' + code
         if st.button('린치·버핏 조사후보 조건 계산', key=context + '_strategy_' + code):
             st.session_state.pop(strategy_key, None)
             quote = market_item.get('lamp', {}).get('close') if market_item and market_item.get('lamp') else None

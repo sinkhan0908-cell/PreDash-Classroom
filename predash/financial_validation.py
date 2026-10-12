@@ -25,6 +25,14 @@ ACCOUNTS = {
 QUARTERS = {'11011': 4, '11014': 3, '11012': 2, '11013': 1}
 
 
+def collection_status(value, reason=None):
+    if value is not None and not reason:
+        return 'DART 수집 정상'
+    if reason and any(word in reason for word in ('서로 다름', '불일치', '통화', '혼재', '원문')):
+        return '확인 필요'
+    return '자료 부족'
+
+
 def numeric(raw):
     text = str(raw).strip().replace(',', '')
     if text.startswith('(') and text.endswith(')'):
@@ -82,13 +90,13 @@ def parse_statement(rows, year, report_code, basis, fetched, december_year_end=T
                        'source': source, 'receipt': receipt, 'fetched_at': fetched,
                        'account_ids': sorted({r.get('account_id', '') for r in candidates}),
                        'raw_values': [r.get(field) for r in candidates], 'amount_field': field,
-                       'status': 'API 형식 확인 · 원문 대조 필요' if value is not None else '보류',
+                       'status': collection_status(value, reason),
                        'data_gap': reason})
     by_name = {r['metric']: r for r in output}
     balance = [by_name[k]['value'] for k in ('자산총계', '부채총계', '자본총계')]
     if all(v is not None for v in balance) and abs(balance[0] - balance[1] - balance[2]) > max(1, abs(balance[0]) * 1e-9):
         for name in ('자산총계', '부채총계', '자본총계', '지배주주자본'):
-            by_name[name].update(value=None, status='보류', data_gap='자산 = 부채 + 자본 불일치: 원문 대조 필요')
+            by_name[name].update(value=None, status='확인 필요', data_gap='자산 = 부채 + 자본 불일치: 원문 대조 필요')
     return output
 
 
@@ -183,7 +191,14 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None):
             status, reason = '판정 보류', '계산에 필요한 값이 부족합니다.'
         else:
             status = '충족' if condition else '미충족'
-            reason = '대시보드 기준 충족' if condition else '대시보드 기준 미달'
+            if 'ROE' in label:
+                reason = f'ROE 중앙값 {value:.2f}% · 기준 15% 이상'
+            elif 'PEG' in label:
+                reason = f'PEG {value:.2f} · 기준 1 이하'
+            elif 'CAGR' in label:
+                reason = f'연평균 성장률 {value:+.2f}% · 기준 0% 초과'
+            else:
+                reason = f'5년 중 최저 연간 금액 {value/1e8:,.2f}억원 · 기준 매년 0원 초과'
         category = '계산 완료'
         if status == '판정 보류':
             if any(word in reason for word in ('원문', '출처', '불일치', '통화')):
