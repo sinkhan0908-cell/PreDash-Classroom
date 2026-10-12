@@ -21,7 +21,7 @@ from predash.macro import fetch_vix,relative,benchmark,MacroError
 from predash.analysis import review
 from predash.health import status as holding_status
 from predash.official import Official, DataError
-from predash.financial_validation import collect as collect_financial_validation, strategy_checks, collection_status
+from predash.financial_validation import collect as collect_financial_validation, strategy_checks, collection_status, export_validation
 import predash.trades as trade_module
 # Streamlit can keep the previous module in memory after updating app.py.
 # Reload only an older interface, before binding functions and exception types.
@@ -154,7 +154,7 @@ def financial_validation_panel(code, context, market_item=None):
         cache_key = 'financial_validation_' + code
         if st.button('최신 재무자료 조회·검증', key=context + '_validate_' + code):
             st.session_state.pop(cache_key, None)
-            st.session_state.pop('strategy_checks_v3_' + code, None)
+            st.session_state.pop('strategy_checks_v4_' + code, None)
             if not api_key('DART_CRTFC_KEY'):
                 st.warning('DART 연결 설정을 확인하세요.')
             else:
@@ -183,7 +183,7 @@ def financial_validation_panel(code, context, market_item=None):
         if data.get('schema_version', 1) < 2:
             st.info('기초자본을 추가하려면 최신 재무자료 조회·검증을 다시 눌러주세요.')
         st.caption('빈 값은 0이 아닙니다. 아래 조건은 공개 자료를 바탕으로 만든 조사 후보 규칙입니다. 부채총계와 차입금은 다릅니다.')
-        strategy_key = 'strategy_checks_v3_' + code
+        strategy_key = 'strategy_checks_v4_' + code
         if st.button('린치·버핏 조사후보 조건 계산', key=context + '_strategy_' + code):
             st.session_state.pop(strategy_key, None)
             quote = market_item.get('lamp', {}).get('close') if market_item and market_item.get('lamp') else None
@@ -208,8 +208,9 @@ def financial_validation_panel(code, context, market_item=None):
             if ref['simple_fcf_won'] is not None:
                 st.caption(f"단순 FCF 참고 {ref['simple_fcf_won']/1e8:,.1f}억원 · 영업현금흐름-유형·무형자산 취득 · 전략 통과 기준 아님")
             st.caption('정량 조건만 계산합니다. 해자·경영진·장기 성장성은 수동 조사 항목입니다. PEG는 최신 연간 EPS와 조회된 종가가 있어야 계산됩니다. 종가·EPS의 분할·수정 이력은 원문 확인이 필요합니다.')
-        st.download_button('공개 재무 검증 결과 내려받기',
-                           json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False),
+        st.caption('내려받는 파일에는 재무자료와 계산한 전략 결과·평가 시각·사용 종가가 함께 담깁니다. 계산 전에는 전략 결과가 null로 저장됩니다.')
+        st.download_button('재무자료·전략 결과 내려받기',
+                           json.dumps(export_validation(data, checks), ensure_ascii=False, indent=2, allow_nan=False),
                            file_name=f'financial-validation-{code}-{data["asof"]}.json',
                            mime='application/json', key=context + '_validation_download_' + code)
 

@@ -23,6 +23,7 @@ ACCOUNTS = {
     '무형자산 취득': ('CF', 'ifrs-full_PurchaseOfIntangibleAssetsClassifiedAsInvestingActivities', ('무형자산의 취득',), '원'),
 }
 QUARTERS = {'11011': 4, '11014': 3, '11012': 2, '11013': 1}
+VERIFICATION_TEXT = 'DART API 수집·자동 점검 완료. 전체 항목의 수동 원문 대조는 미완료입니다.'
 
 
 def collection_status(value, reason=None):
@@ -157,7 +158,7 @@ def collect(provider, code, asof=None):
     return {'schema_version': 2, 'code': code, 'name': company.get('corp_name', code),
             'asof': asof.isoformat(), 'fetched_at': fetched, 'basis': basis, 'rows': evidence,
             'opening_equity': opening_equity,
-            'verification': 'API 구조·단위·중복·재무상태표 등식 점검. 원문 및 실제 API 대조 완료를 뜻하지 않습니다.',
+            'verification': VERIFICATION_TEXT,
             'data_gaps': [{'year': r['year'], 'report_code': r['report_code'], 'metric': r['metric'], 'reason': r['data_gap']}
                           for r in evidence + opening_equity if r['data_gap']]}
 
@@ -305,7 +306,24 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None):
                'categories': {category: sum(c['reason_type'] == category for c in checks)
                               for category in ('데이터 부족', '공식 적용 불가', '원문 확인 필요')},
                'annual_period': f'{years[0]}~{years[-1]}년 연간' if years else '연간 자료 없음'}
-    return {'checks': checks, 'summary': summary, 'reference_metrics': {'latest_annual_year': years[-1] if years else None,
+    return {'rule_version': 1, 'code': data.get('code'), 'financial_fetched_at': data.get('fetched_at'),
+            'evaluated_at': datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds'),
+            'quote_input': {'close': quote, 'date': quote_date, 'source': quote_source},
+            'checks': checks, 'summary': summary, 'reference_metrics': {'latest_annual_year': years[-1] if years else None,
             'debt_to_equity_pct': debt_ratio, 'simple_fcf_won': fcf,
             'reference_period': f'{years[-1]} 연간' if years else None},
             'note': '대시보드 자체 조사 기준이며 대가의 공식·추천이 아닙니다. 정성 요인 및 공시 원문 검증은 별도입니다.'}
+
+
+def export_validation(data, strategy=None):
+    """Export the displayed public financial snapshot and its matching calculation."""
+    payload = dict(data)
+    payload['schema_version'] = 3
+    payload['verification'] = VERIFICATION_TEXT
+    if data.get('data_gaps'):
+        payload['verification'] = 'DART API 수집·자동 점검 수행. 예외 항목은 data_gaps를 확인하세요. 전체 항목의 수동 원문 대조는 미완료입니다.'
+    matches = strategy is not None and strategy.get('code') == data.get('code') and strategy.get('financial_fetched_at') == data.get('fetched_at')
+    payload['strategy_result'] = strategy if matches else None
+    payload['strategy_export_status'] = '전략 계산 결과 포함' if matches else '전략 계산 전' if strategy is None else '재무자료와 결과 시점 불일치 · 재계산 필요'
+    payload['exported_at'] = datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds')
+    return payload

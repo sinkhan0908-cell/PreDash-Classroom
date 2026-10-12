@@ -6,7 +6,7 @@ from contextlib import nullcontext
 from datetime import date
 from unittest.mock import Mock
 
-from predash.financial_validation import parse_statement, collect, strategy_checks, collection_status
+from predash.financial_validation import parse_statement, collect, strategy_checks, collection_status, export_validation
 from predash.official import Official, DataError
 
 
@@ -73,7 +73,7 @@ class FinancialValidationTests(unittest.TestCase):
         node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'financial_validation_panel')
         st = Mock()
         st.session_state = {'financial_validation_005930': {'old': 'result'},
-                            'strategy_checks_v3_005930': {'old': 'strategy'}}
+                            'strategy_checks_v4_005930': {'old': 'strategy'}}
         st.expander.return_value = nullcontext()
         st.spinner.return_value = nullcontext()
         st.button.return_value = True
@@ -82,7 +82,7 @@ class FinancialValidationTests(unittest.TestCase):
         exec(compile(ast.Module(body=[node], type_ignores=[]), 'app.py', 'exec'), namespace)
         namespace['financial_validation_panel']('005930', 'watch')
         self.assertNotIn('financial_validation_005930', st.session_state)
-        self.assertNotIn('strategy_checks_v3_005930', st.session_state)
+        self.assertNotIn('strategy_checks_v4_005930', st.session_state)
         st.warning.assert_called_once_with('조회 실패')
 
     def test_five_years_same_basis_and_no_price_calls(self):
@@ -169,6 +169,27 @@ class FinancialValidationTests(unittest.TestCase):
         self.assertEqual(collection_status(None, '계정 누락'), '자료 부족')
         self.assertEqual(collection_status(None, '동일 계정 값 서로 다름'), '확인 필요')
         self.assertEqual(collection_status(None, 'KRW 통화 확인 실패'), '확인 필요')
+
+    def test_export_includes_matching_strategy_and_keeps_null_before_calculation(self):
+        data = {'code': '005930', 'fetched_at': '2026-10-12T15:46:03+09:00', 'rows': [], 'data_gaps': []}
+        before = export_validation(data)
+        self.assertIsNone(before['strategy_result'])
+        self.assertEqual(before['strategy_export_status'], '전략 계산 전')
+        result = strategy_checks(data)
+        after = export_validation(data, result)
+        self.assertEqual(after['strategy_result']['summary']['total'], 6)
+        self.assertIn('evaluated_at', after['strategy_result'])
+        self.assertIsNone(after['strategy_result']['quote_input']['close'])
+        self.assertIn('수동 원문 대조는 미완료', after['verification'])
+        json.dumps(after, allow_nan=False)
+        self.assertNotIn('strategy_result', data)
+
+    def test_export_rejects_result_from_another_financial_snapshot(self):
+        data = {'code': '005930', 'fetched_at': 'new', 'rows': [], 'data_gaps': []}
+        old = {'code': '005930', 'financial_fetched_at': 'old'}
+        self.assertIsNone(export_validation(data, old)['strategy_result'])
+        wrong_stock = {'code': '000660', 'financial_fetched_at': 'new'}
+        self.assertIsNone(export_validation(data, wrong_stock)['strategy_result'])
 
     def test_strategy_requires_consecutive_years(self):
         rows = []
