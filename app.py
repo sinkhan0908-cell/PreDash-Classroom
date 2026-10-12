@@ -154,6 +154,7 @@ def financial_validation_panel(code, context, market_item=None):
         cache_key = 'financial_validation_' + code
         if st.button('최신 재무자료 조회·검증', key=context + '_validate_' + code):
             st.session_state.pop(cache_key, None)
+            st.session_state.pop('strategy_checks_v2_' + code, None)
             if not api_key('DART_CRTFC_KEY'):
                 st.warning('DART 연결 설정을 확인하세요.')
             else:
@@ -179,7 +180,7 @@ def financial_validation_panel(code, context, market_item=None):
         if data.get('schema_version', 1) < 2:
             st.info('기초자본을 추가하려면 최신 재무자료 조회·검증을 다시 눌러주세요.')
         st.caption('빈 값은 0이 아닙니다. 아래 조건은 공개 자료를 바탕으로 만든 조사 후보 규칙입니다. 부채총계와 차입금은 다릅니다.')
-        strategy_key = 'strategy_checks_' + code
+        strategy_key = 'strategy_checks_v2_' + code
         if st.button('린치·버핏 조사후보 조건 계산', key=context + '_strategy_' + code):
             st.session_state.pop(strategy_key, None)
             quote = market_item.get('lamp', {}).get('close') if market_item and market_item.get('lamp') else None
@@ -189,8 +190,14 @@ def financial_validation_panel(code, context, market_item=None):
         checks = st.session_state.get(strategy_key)
         if checks:
             st.caption(checks['note'])
+            summary = checks['summary']
+            st.success(f"계산 완료 {summary['completed']}/{summary['total']} · 조건 충족 {summary['met']}개 · 미충족 {summary['unmet']}개")
+            st.caption('계산 완료는 조건 통과율이나 투자점수가 아닙니다.')
+            st.caption(' · '.join(f"{label} {count}개" for label, count in summary['categories'].items()))
+            st.caption(f"평가 기간: {summary['annual_period']} · EPS 성장률은 최근 4개 결산연도 사용 · 반기 누적값은 이 연간 판정에 포함하지 않습니다.")
+            st.caption('데이터 부족: 필요한 값·기간 없음 / 공식 적용 불가: 적자·0 또는 비양수 성장률 / 원문 확인 필요: 출처·금액 충돌 확인')
             st.dataframe([{'전략 참고': c['group'], '조건': c['condition'], '계산값': c['value'],
-                           '단위': c['unit'], '판정': c['status'], '판정 사유': c['reason'],
+                           '단위': c['unit'], '판정': c['display_status'], '사유 구분': c['reason_type'], '판정 사유': c['reason'],
                            '대상 기간': c['period'], '원문 출처': ' · '.join(dict.fromkeys(x for x in c['sources'] if x))}
                           for c in checks['checks']], hide_index=True, use_container_width=True)
             ref = checks['reference_metrics']

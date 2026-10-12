@@ -169,14 +169,32 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None):
 
     def add(group, label, value, unit, condition, period, sources, pending=None):
         if pending:
+            metrics = ('기본 EPS',) if 'EPS' in label or 'PEG' in label else (
+                ('지배주주순이익', '지배주주자본', '기초 지배주주자본') if 'ROE' in label else
+                ('매출',) if '매출' in label else ('영업현금흐름',) if '현금흐름' in label else ('영업이익',))
+            conflicts = [g['reason'] for g in data.get('data_gaps', [])
+                         if g.get('metric') in metrics and g.get('report_code') == '11011'
+                         and any(word in g['reason'] for word in ('서로 다름', '불일치', '통화', '혼재'))]
+            if conflicts:
+                pending = '원문 확인 필요 · ' + ' / '.join(dict.fromkeys(conflicts))
+        if pending:
             status, reason = '판정 보류', pending
         elif value is None:
             status, reason = '판정 보류', '계산에 필요한 값이 부족합니다.'
         else:
             status = '충족' if condition else '미충족'
             reason = '대시보드 기준 충족' if condition else '대시보드 기준 미달'
+        category = '계산 완료'
+        if status == '판정 보류':
+            if any(word in reason for word in ('원문', '출처', '불일치', '통화')):
+                category = '원문 확인 필요'
+            elif any(word in reason for word in ('적자', '0 EPS', '양수가 아니', '비양수')):
+                category = '공식 적용 불가'
+            else:
+                category = '데이터 부족'
         checks.append({'group': group, 'condition': label, 'value': value, 'unit': unit,
-                       'status': status, 'reason': reason, 'period': period, 'sources': sources})
+                       'status': status, 'display_status': category if status == '판정 보류' else status,
+                       'reason_type': category, 'reason': reason, 'period': period, 'sources': sources})
 
     sales = [(y, annual[y].get('매출')) for y in years]
     sales = [(y, v) for y, v in sales if v is not None]
@@ -185,7 +203,8 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None):
         cagr = ((sales[-1][1] / sales[0][1]) ** (1 / (sales[-1][0] - sales[0][0])) - 1) * 100
         gap = None if len(sales) == sales[-1][0] - sales[0][0] + 1 else '연속 연간 매출 자료 부족'
     else:
-        cagr, gap = None, '연간 매출 누락 또는 비양수'
+        cagr = None
+        gap = '연간 매출 자료 부족' if len(sales) < 2 else '연간 매출이 비양수여서 CAGR 계산 불가'
     add('린치 참고', f'매출 CAGR 양수 · {len(sales)}개 결산점', cagr, '%', cagr is not None and cagr > 0,
         f"{sales[0][0]}~{sales[-1][0]} 연간" if sales else None, sources, gap)
 
@@ -266,7 +285,12 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None):
     capex = latest.get('유형자산 취득'), latest.get('무형자산 취득')
     if latest.get('영업현금흐름') is not None and all(v is not None for v in capex):
         fcf = latest['영업현금흐름'] - sum(capex)
-    return {'checks': checks, 'reference_metrics': {'latest_annual_year': years[-1] if years else None,
+    summary = {'total': len(checks), 'completed': sum(c['reason_type'] == '계산 완료' for c in checks),
+               'met': sum(c['status'] == '충족' for c in checks), 'unmet': sum(c['status'] == '미충족' for c in checks),
+               'categories': {category: sum(c['reason_type'] == category for c in checks)
+                              for category in ('데이터 부족', '공식 적용 불가', '원문 확인 필요')},
+               'annual_period': f'{years[0]}~{years[-1]}년 연간' if years else '연간 자료 없음'}
+    return {'checks': checks, 'summary': summary, 'reference_metrics': {'latest_annual_year': years[-1] if years else None,
             'debt_to_equity_pct': debt_ratio, 'simple_fcf_won': fcf,
             'reference_period': f'{years[-1]} 연간' if years else None},
             'note': '대시보드 자체 조사 기준이며 대가의 공식·추천이 아닙니다. 정성 요인 및 공시 원문 검증은 별도입니다.'}

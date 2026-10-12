@@ -151,6 +151,9 @@ class FinancialValidationTests(unittest.TestCase):
         by_name = {c['condition']: c for c in result['checks']}
         self.assertEqual(by_name['EPS CAGR 양수 · 최근 4개 연간 EPS']['status'], '판정 보류')
         self.assertIn('적자', by_name['EPS CAGR 양수 · 최근 4개 연간 EPS']['reason'])
+        self.assertEqual(by_name['EPS CAGR 양수 · 최근 4개 연간 EPS']['display_status'], '공식 적용 불가')
+        self.assertEqual(result['summary']['completed'], 4)
+        self.assertEqual(result['summary']['categories']['공식 적용 불가'], 2)
         self.assertEqual(by_name['PEG ≤ 1 · 기준일 종가 ÷ 최근 연간 EPS ÷ EPS CAGR(%)']['status'], '판정 보류')
         self.assertEqual(by_name['5년 ROE 중앙값 ≥ 15% · 지배주주순이익/평균 지배주주자본']['status'], '충족')
 
@@ -171,6 +174,8 @@ class FinancialValidationTests(unittest.TestCase):
         self.assertEqual(by_name['EPS CAGR 양수 · 최근 4개 연간 EPS']['status'], '판정 보류')
         self.assertEqual(by_name['5년 ROE 중앙값 ≥ 15% · 지배주주순이익/평균 지배주주자본']['status'], '판정 보류')
         self.assertEqual(by_name['최근 5년 영업이익 모두 양수']['status'], '판정 보류')
+        self.assertEqual(by_name['EPS CAGR 양수 · 최근 4개 연간 EPS']['display_status'], '데이터 부족')
+        self.assertEqual(result['summary']['completed'], 0)
 
 
 if __name__ == '__main__':
