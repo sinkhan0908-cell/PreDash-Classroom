@@ -25,12 +25,19 @@ if not hasattr(official_module, 'DIRECTORY_TTL_SECONDS'):
     official_module = importlib.reload(official_module)
 Official, DataError = official_module.Official, official_module.DataError
 import predash.financial_validation as financial_validation_module
-if not hasattr(financial_validation_module, 'quote_date_check'):
+if 'evaluation_date' not in inspect.signature(financial_validation_module.strategy_checks).parameters:
     financial_validation_module = importlib.reload(financial_validation_module)
 collect_financial_validation = financial_validation_module.collect
 strategy_checks = financial_validation_module.strategy_checks
 collection_status = financial_validation_module.collection_status
 export_validation = financial_validation_module.export_validation
+from predash.financial_cache import FinancialCache
+
+
+@st.cache_resource
+def public_financial_cache():
+    return FinancialCache()
+
 import predash.trades as trade_module
 # Streamlit can keep the previous module in memory after updating app.py.
 # Reload only an older interface, before binding functions and exception types.
@@ -161,24 +168,39 @@ def financial_validation_panel(code, context, market_item=None):
     with st.expander(f'{code} · 재무 데이터 검증 · 최근 공시와 5개 결산연도'):
         st.caption('DART 재무정보만 조회합니다. 주가·KIS 연결과 독립적으로 작동합니다. 금액은 원, EPS는 원/주입니다.')
         cache_key = 'financial_validation_' + code
-        if st.button('최신 재무자료 조회·검증', key=context + '_validate_' + code):
-            st.session_state.pop(cache_key, None)
-            st.session_state.pop('strategy_checks_v5_' + code, None)
+        memory = public_financial_cache()
+        error_key = 'financial_refresh_error_' + code
+        status_key = 'financial_cache_status_' + code
+        today = datetime.now(ZoneInfo('Asia/Seoul')).date().isoformat()
+        st.caption('정상 자료는 24시간, 누락·확인 필요 항목이 있는 자료는 5분간 재사용합니다. 새 공시·정정공시를 즉시 반영하려면 강제 새로고침을 누르세요. 서버 재시작 시 저장 자료는 사라집니다.')
+        left, right = st.columns(2)
+        reuse = left.button('재무자료 조회·검증', key=context + '_validate_' + code)
+        force = right.button('강제 새로고침 · DART 재조회', key=context + '_force_validate_' + code)
+        if reuse or force:
+            st.session_state.pop('strategy_checks_v6_' + code, None)
             if not api_key('DART_CRTFC_KEY'):
-                st.warning('DART 연결 설정을 확인하세요.')
+                st.session_state[error_key] = 'DART 연결 설정을 확인하세요.'
             else:
                 try:
-                    with st.spinner('최근 공시 및 연간 재무제표를 확인합니다.'):
-                        st.session_state[cache_key] = collect_financial_validation(official_client(), code)
-                except DataError as exc:
-                    st.warning(str(exc))
+                    with st.spinner('저장 자료 또는 DART 재무제표를 확인합니다.'):
+                        result, origin = memory.get(code, lambda: collect_financial_validation(official_client(), code), force=force)
+                        st.session_state[cache_key] = result
+                        st.session_state[status_key] = origin
+                        st.session_state.pop(error_key, None)
+                except (DataError, ValueError) as exc:
+                    st.session_state[error_key] = str(exc)
+        if st.session_state.get(error_key):
+            st.warning('최근 조회 실패 · ' + st.session_state[error_key] + ' · 이전 자료가 있으면 원래 조회 시각으로 표시합니다.')
         data = st.session_state.get(cache_key)
         if not data:
             st.caption('조회 버튼을 누르면 검증표가 표시됩니다. 조회 실패 시 이전 값을 최신 값으로 표시하지 않습니다.')
             return
         st.caption(f"{data['name']} · {data['basis']} · 조회 {data['fetched_at']}")
-        if data['asof'] != datetime.now(ZoneInfo('Asia/Seoul')).date().isoformat():
-            st.warning('이전 날짜의 조회 결과입니다. 최신 재무자료 조회·검증을 눌러 갱신하세요.')
+        remaining = memory.remaining(code, data['fetched_at'])
+        usable = remaining > 0 and not st.session_state.get(error_key)
+        st.caption(f"{st.session_state.get(status_key, '이전 저장 자료')} · 공시 조회 기준일 {data['asof']} · 재사용 남은 시간 {int(remaining // 60)}분")
+        if not usable:
+            st.warning('재무자료 조회·검증을 눌러 갱신하세요. 만료되었거나 최근 조회에 실패한 자료의 새 전략 계산은 보류합니다.')
         st.caption('DART 수집 정상: 공식 API의 숫자·통화·기간 자동 점검 통과. 모든 값을 사람이 원문과 대조했다는 뜻은 아닙니다.')
         st.caption('확인 필요는 실제 금액·통화·기간 충돌을 발견한 항목입니다. 원문 링크에서 근거를 확인할 수 있습니다.')
         if data.get('data_gaps'):
@@ -192,14 +214,20 @@ def financial_validation_panel(code, context, market_item=None):
         if data.get('schema_version', 1) < 2:
             st.info('기초자본을 추가하려면 최신 재무자료 조회·검증을 다시 눌러주세요.')
         st.caption('빈 값은 0이 아닙니다. 아래 조건은 공개 자료를 바탕으로 만든 조사 후보 규칙입니다. 부채총계와 차입금은 다릅니다.')
-        strategy_key = 'strategy_checks_v5_' + code
-        if st.button('린치·버핏 조사후보 조건 계산', key=context + '_strategy_' + code):
+        strategy_key = 'strategy_checks_v6_' + code
+        if st.button('린치·버핏 조사후보 조건 계산', key=context + '_strategy_' + code, disabled=not usable):
             st.session_state.pop(strategy_key, None)
             quote = market_item.get('lamp', {}).get('close') if market_item and market_item.get('lamp') else None
             quote_date = market_item.get('lamp', {}).get('date') if market_item and market_item.get('lamp') else None
             quote_source = market_item.get('price_source') if market_item else None
-            st.session_state[strategy_key] = strategy_checks(data, quote, quote_date, quote_source)
+            st.session_state[strategy_key] = strategy_checks(data, quote, quote_date, quote_source, evaluation_date=today)
         checks = st.session_state.get(strategy_key)
+        current_lamp = (market_item or {}).get('lamp') or {}
+        current_quote = (current_lamp.get('close'), current_lamp.get('date'), (market_item or {}).get('price_source'))
+        checked_quote = tuple((checks or {}).get('quote_input', {}).get(k) for k in ('close', 'date', 'source'))
+        if checks and (not usable or checks.get('evaluation_date') != today or checks.get('financial_fetched_at') != data['fetched_at'] or checked_quote != current_quote):
+            st.session_state.pop(strategy_key, None)
+            checks = None
         if checks:
             st.caption(checks['note'])
             summary = checks['summary']

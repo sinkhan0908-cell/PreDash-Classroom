@@ -182,7 +182,7 @@ def collect(provider, code, asof=None):
                           for r in evidence + opening_equity if r['data_gap']]}
 
 
-def strategy_checks(data, quote=None, quote_date=None, quote_source=None):
+def strategy_checks(data, quote=None, quote_date=None, quote_source=None, evaluation_date=None):
     """Rule-based research leads; thresholds are dashboard settings, not investor quotes."""
     annual = {}
     issues = []
@@ -277,7 +277,7 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None):
         eps_receipt = next((r.get('receipt') for r in data.get('rows', [])
                             if r.get('year') == years[-1] and r.get('metric') == '기본 EPS'
                             and r.get('report_code') == '11011'), None)
-        quote_gap, quote_age = quote_date_check(data.get('asof'), quote_date, eps_receipt)
+        quote_gap, quote_age = quote_date_check(evaluation_date or data.get('asof'), quote_date, eps_receipt)
     quote_sources = list(dict.fromkeys([quote_source] + eps_sources)) if quote_source else eps_sources
     add('린치 참고', 'PEG ≤ 1 · 기준일 종가 ÷ 최근 연간 EPS ÷ EPS CAGR(%)', peg, '배수', peg is not None and peg <= 1,
         f"종가 {quote_date or '미확인'} / EPS {years[-1] if years else '미확인'}년", quote_sources, quote_gap)
@@ -332,6 +332,7 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None):
                'annual_period': f'{years[0]}~{years[-1]}년 연간' if years else '연간 자료 없음'}
     return {'rule_version': 2, 'code': data.get('code'), 'financial_fetched_at': data.get('fetched_at'),
             'evaluated_at': datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds'),
+            'evaluation_date': evaluation_date or data.get('asof'),
             'quote_input': {'close': quote, 'date': quote_date, 'source': quote_source,
                             'age_calendar_days': quote_age, 'max_age_calendar_days': 7,
                             'basis': '표시된 날짜 종가 기준 · 최신 거래일 여부 미확인'},

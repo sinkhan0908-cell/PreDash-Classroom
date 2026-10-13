@@ -3,7 +3,9 @@ import ast
 import unittest
 from pathlib import Path
 from contextlib import nullcontext
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+from predash.financial_cache import FinancialCache
 from unittest.mock import Mock
 
 from predash.financial_validation import parse_statement, collect, strategy_checks, collection_status, export_validation, quote_date_check
@@ -67,23 +69,32 @@ class FinancialValidationTests(unittest.TestCase):
         self.assertIsNone(data['매출']['value'])
         self.assertIn('불일치', data['매출']['data_gap'])
 
-    def test_failed_ui_refresh_removes_old_result(self):
+    def test_failed_ui_refresh_preserves_labeled_snapshot_and_disables_strategy(self):
         # Execute the actual UI function with a tiny Streamlit boundary stub.
         tree = ast.parse(Path('app.py').read_text())
         node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'financial_validation_panel')
         st = Mock()
-        st.session_state = {'financial_validation_005930': {'old': 'result'},
-                            'strategy_checks_v5_005930': {'old': 'strategy'}}
+        data = {'code': '005930', 'name': '공개기업', 'basis': 'CFS', 'asof': '2026-10-08',
+                'fetched_at': '2026-10-08T12:00:00+09:00', 'rows': [], 'data_gaps': []}
+        st.session_state = {'financial_validation_005930': data,
+                            'strategy_checks_v6_005930': {'old': 'strategy'}}
         st.expander.return_value = nullcontext()
         st.spinner.return_value = nullcontext()
-        st.button.return_value = True
+        left, right = Mock(), Mock()
+        left.button.return_value = False
+        right.button.return_value = True
+        st.columns.return_value = (left, right)
+        st.button.return_value = False
         namespace = {'st': st, 'api_key': lambda key: 'configured', 'official_client': Mock(),
-                     'collect_financial_validation': Mock(side_effect=DataError('조회 실패')), 'DataError': DataError}
+                     'collect_financial_validation': Mock(side_effect=DataError('조회 실패')), 'DataError': DataError,
+                     'public_financial_cache': lambda: FinancialCache(), 'datetime': datetime, 'ZoneInfo': ZoneInfo,
+                     'json': json, 'export_validation': export_validation}
         exec(compile(ast.Module(body=[node], type_ignores=[]), 'app.py', 'exec'), namespace)
         namespace['financial_validation_panel']('005930', 'watch')
-        self.assertNotIn('financial_validation_005930', st.session_state)
-        self.assertNotIn('strategy_checks_v5_005930', st.session_state)
-        st.warning.assert_called_once_with('조회 실패')
+        self.assertEqual(st.session_state['financial_validation_005930'], data)
+        self.assertNotIn('strategy_checks_v6_005930', st.session_state)
+        self.assertEqual(st.session_state['financial_refresh_error_005930'], '조회 실패')
+        self.assertTrue(st.button.call_args.kwargs['disabled'])
 
     def test_five_years_same_basis_and_no_price_calls(self):
         provider = Mock()
