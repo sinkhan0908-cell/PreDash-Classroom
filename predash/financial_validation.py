@@ -24,6 +24,7 @@ ACCOUNTS = {
 }
 QUARTERS = {'11011': 4, '11014': 3, '11012': 2, '11013': 1}
 VERIFICATION_TEXT = 'DART API 수집·자동 점검 완료. 전체 항목의 수동 원문 대조는 미완료입니다.'
+EVIDENCE_VERSION = 1
 
 
 def collection_status(value, reason=None):
@@ -195,6 +196,39 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None, evalua
     opening = {r.get('year'): r for r in data.get('opening_equity', [])}
     checks = []
 
+    def inputs(metrics, target_years):
+        output = []
+        for y in target_years:
+            for metric in metrics:
+                pool = data.get('opening_equity', []) if metric == '기초 지배주주자본' else data.get('rows', [])
+                row = next((r for r in pool if r.get('year') == y and r.get('metric') == metric
+                            and (r.get('report_code') == '11011' or r.get('period_type') == '연간')), {})
+                output.append({'year': y, 'metric': metric, 'value': row.get('value'),
+                               'unit': row.get('unit', '원/주' if metric == '기본 EPS' else '원'),
+                               'period_end': row.get('period_end'), 'basis': row.get('basis', data.get('basis')),
+                               'source': row.get('source'), 'receipt': row.get('receipt'),
+                               'fetched_at': row.get('fetched_at', data.get('fetched_at')),
+                               'data_gap': row.get('data_gap') or ('해당 연도 자료 누락' if not row else None)})
+        return output
+
+    def explain(formula, threshold, evidence, steps, intermediates=None):
+        check = checks[-1]
+        check['evidence'] = {'version': EVIDENCE_VERSION, 'formula': formula, 'threshold': threshold,
+                             'inputs': evidence, 'steps': steps, 'intermediates': intermediates or [],
+                             'result': check['value'] if check['status'] != '판정 보류' else None,
+                             'unit': check['unit'],
+                             'blocked_reason': check['reason'] if check['status'] == '판정 보류' else None,
+                             'financial_fetched_at': data.get('fetched_at'),
+                             'evaluation_date': evaluation_date or data.get('asof')}
+
+    def growth_steps(points, value):
+        if value is None or len(points) < 2:
+            return ['입력값·연속 기간·양수 조건을 확인한 뒤 계산합니다.']
+        start, end = points[0], points[-1]
+        interval = end[0] - start[0]
+        return [f'{start[0]}년 → {end[0]}년: 성장 구간 {interval}년',
+                f'(({end[1]:,.6g} ÷ {start[1]:,.6g})^(1 ÷ {interval}) − 1) × 100 = {value:.6f}%']
+
     def add(group, label, value, unit, condition, period, sources, pending=None):
         if pending:
             metrics = ('기본 EPS',) if 'EPS' in label or 'PEG' in label else (
@@ -242,6 +276,9 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None, evalua
         gap = '연간 매출 자료 부족' if len(sales) < 2 else '연간 매출이 비양수여서 CAGR 계산 불가'
     add('린치 참고', f'매출 CAGR 양수 · {len(sales)}개 결산점', cagr, '%', cagr is not None and cagr > 0,
         f"{sales[0][0]}~{sales[-1][0]} 연간" if sales else None, sources, gap)
+    explain('((마지막 연도 매출 ÷ 시작 연도 매출)^(1 ÷ 경과 연수) − 1) × 100',
+            '연속 연간 자료 · 양수인 시작·마지막 매출 · CAGR > 0%',
+            inputs(('매출',), years), growth_steps(sales, cagr))
 
     eps_periods = years[-4:]
     eps = [(y, annual.get(y, {}).get('기본 EPS')) for y in eps_periods]
@@ -258,6 +295,9 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None, evalua
     eps_sources = [r.get('source') for r in data.get('rows', []) if r.get('metric') == '기본 EPS' and r.get('year') in eps_periods]
     add('린치 참고', 'EPS CAGR 양수 · 최근 4개 연간 EPS', eps_cagr, '%', eps_cagr is not None and eps_cagr > 0,
         f"{eps_periods[0]}~{eps_periods[-1]} 연간" if eps_periods else None, eps_sources, eps_gap)
+    explain('((마지막 연간 EPS ÷ 시작 연간 EPS)^(1 ÷ 3) − 1) × 100',
+            '연속 4개 연간 EPS 모두 양수 · CAGR > 0%',
+            inputs(('기본 EPS',), eps_periods), growth_steps(eps, eps_cagr))
 
     latest_eps = annual.get(years[-1], {}).get('기본 EPS') if years else None
     per = quote / latest_eps if quote and latest_eps and latest_eps > 0 else None
@@ -283,6 +323,18 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None, evalua
         f"종가 {quote_date or '미확인'} / EPS {years[-1] if years else '미확인'}년", quote_sources, quote_gap)
     if quote_age is not None and not quote_gap:
         checks[-1]['reason'] += f' · {quote_date} 종가 기준 · 조회일 대비 {quote_age}일 이전'
+    price_evidence = {'year': None, 'metric': '종가', 'value': quote, 'unit': '원/주',
+                      'period_end': quote_date, 'basis': '표시된 날짜 종가', 'source': quote_source,
+                      'receipt': None, 'fetched_at': None,
+                      'data_gap': '종가 출처·수집 시각은 시세 화면 기준. 원문 URL이 없는 경우 제공기관명만 표시합니다.'}
+    peg_steps = ['EPS 성장률은 위의 최근 4개 연간 EPS로 계산합니다. 20%는 0.2가 아닌 20을 분모에 사용합니다.']
+    if per is not None and peg is not None:
+        peg_steps += [f'PER = {quote:,.6g} ÷ {latest_eps:,.6g} = {per:.6f}배',
+                      f'PEG = {per:.6f} ÷ {eps_cagr:.6f} = {peg:.6f}배']
+    explain('(종가 ÷ 최근 연간 기본 EPS) ÷ EPS CAGR(%)',
+            'PEG ≤ 1 · EPS 성장률 양수 · 7일 이내 종가 · EPS 공시 이후 가격',
+            [price_evidence] + inputs(('기본 EPS',), eps_periods), peg_steps,
+            [{'PER': per, 'EPS CAGR(%)': eps_cagr, '종가 경과일': quote_age}])
 
     recent = years[-5:]
     roes, roe_gap, roe_sources = [], None, []
@@ -306,6 +358,18 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None, evalua
     add('버핏 참고', '5년 ROE 중앙값 ≥ 15% · 지배주주순이익/평균 지배주주자본', median_roe, '%',
         median_roe is not None and median_roe >= 15, f'{recent[0]}~{recent[-1]} 연간' if recent else None,
         list(dict.fromkeys(roe_sources)), roe_gap)
+    roe_details = [{'사업연도': y, '지배주주순이익(원)': annual[y].get('지배주주순이익'),
+                    '기초 지배주주자본(원)': opening.get(y, {}).get('value'),
+                    '기말 지배주주자본(원)': annual[y].get('지배주주자본'),
+                    '계산한 ROE(%)': roes[i] if i < len(roes) else None} for i, y in enumerate(recent)]
+    roe_steps = ['연도별 ROE = 지배주주순이익 ÷ ((기초 지배주주자본 + 기말 지배주주자본) ÷ 2) × 100']
+    if median_roe is not None:
+        roe_steps.append('5개 ROE 정렬: ' + ', '.join(f'{r:.6f}%' for r in sorted(roes)))
+        roe_steps.append(f'가운데 세 번째 값 = {median_roe:.6f}%')
+    else:
+        roe_steps.append('필수 값에 문제가 있으면 이후 연도의 계산과 중앙값 판정을 보류합니다.')
+    explain('연도별 ROE를 계산한 뒤 최근 5년의 중앙값', '연속 5년 · 기초·기말 자본 양수 · ROE 중앙값 ≥ 15%',
+            inputs(('지배주주순이익', '기초 지배주주자본', '지배주주자본'), recent), roe_steps, roe_details)
 
     def all_positive(metric, label):
         vals = [(y, annual.get(y, {}).get(metric)) for y in recent]
@@ -315,6 +379,9 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None, evalua
         src = [r.get('source') for r in data.get('rows', []) if r.get('year') in recent and r.get('metric') == metric]
         add('버핏 참고', label, value, '원', value is not None and value > 0,
             f'{recent[0]}~{recent[-1]} 연간' if recent else None, src, gap)
+        explain('최근 5개 연간 금액의 최솟값 > 0', '연속 5개 연도 모두 0원 초과',
+                inputs((metric,), recent),
+                [f'5개 연도 중 최솟값 = {value:,.0f}원'] if value is not None else ['연간 금액이 누락되어 최솟값 판정을 보류합니다.'])
     all_positive('영업이익', '최근 5년 영업이익 모두 양수')
     all_positive('영업현금흐름', '최근 5년 영업현금흐름 모두 양수')
 
@@ -330,7 +397,7 @@ def strategy_checks(data, quote=None, quote_date=None, quote_source=None, evalua
                'categories': {category: sum(c['reason_type'] == category for c in checks)
                               for category in ('데이터 부족', '공식 적용 불가', '원문 확인 필요')},
                'annual_period': f'{years[0]}~{years[-1]}년 연간' if years else '연간 자료 없음'}
-    return {'rule_version': 2, 'code': data.get('code'), 'financial_fetched_at': data.get('fetched_at'),
+    return {'rule_version': 2, 'evidence_version': EVIDENCE_VERSION, 'code': data.get('code'), 'financial_fetched_at': data.get('fetched_at'),
             'evaluated_at': datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds'),
             'evaluation_date': evaluation_date or data.get('asof'),
             'quote_input': {'close': quote, 'date': quote_date, 'source': quote_source,

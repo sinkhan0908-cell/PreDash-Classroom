@@ -25,7 +25,7 @@ if not hasattr(official_module, 'DIRECTORY_TTL_SECONDS'):
     official_module = importlib.reload(official_module)
 Official, DataError = official_module.Official, official_module.DataError
 import predash.financial_validation as financial_validation_module
-if 'evaluation_date' not in inspect.signature(financial_validation_module.strategy_checks).parameters:
+if not hasattr(financial_validation_module, 'EVIDENCE_VERSION'):
     financial_validation_module = importlib.reload(financial_validation_module)
 collect_financial_validation = financial_validation_module.collect
 strategy_checks = financial_validation_module.strategy_checks
@@ -164,6 +164,42 @@ def financial_comparison(m):
     st.dataframe(rows,hide_index=True,use_container_width=True)
     st.caption(f"OpenDART · {m['basis']} · 조회 {m['fetched']} · 단독 3개월은 동일 공시의 당기금액/전기 분기금액 사용 · 적자/0 기저 증가율 보류")
 
+def strategy_evidence_panel(checks, code, context):
+    if not st.checkbox('계산 근거 펼쳐보기', key=context + '_evidence_open_' + code):
+        return
+    selected = st.selectbox('확인할 조건', range(len(checks['checks'])),
+                            format_func=lambda i: checks['checks'][i]['condition'],
+                            key=context + '_evidence_condition_' + code)
+    check = checks['checks'][selected]
+    evidence = check.get('evidence')
+    if not evidence:
+        st.info('조건 계산 버튼을 다시 누르면 계산 근거가 표시됩니다.')
+        return
+    st.write(f"**{check['display_status']}** · {check['reason']}")
+    st.write('**계산식:** ' + evidence['formula'])
+    st.write('**판정 기준:** ' + evidence['threshold'])
+    st.caption(f"재무 수집 {evidence['financial_fetched_at']} · 전략 평가 기준일 {evidence['evaluation_date']} · 대상 기간 {check['period'] or '미확인'}")
+    if evidence['blocked_reason']:
+        st.warning('최종 판정 보류 · ' + evidence['blocked_reason'])
+        st.caption('아래에 산술값이 있더라도 필수 자료·기간·출처 조건을 통과한 결과는 아닙니다.')
+    for step in evidence['steps']:
+        st.write(step)
+    if evidence['intermediates']:
+        st.dataframe(evidence['intermediates'], hide_index=True, use_container_width=True)
+    st.caption('사용한 입력값 · 금액 원, EPS·종가 원/주 · 빈 값은 미확인입니다. 식의 표시값은 반올림되며 계산에는 원래 값을 사용합니다.')
+    st.dataframe([{'연도': r['year'], '항목': r['metric'], '값': r['value'], '단위': r['unit'],
+                   '기준일': r['period_end'], '회계 기준': r['basis'], '확인 사유': r['data_gap'],
+                   '출처': r['source'], '공시 접수번호': r['receipt'], '수집 시각': r['fetched_at']}
+                  for r in evidence['inputs']], hide_index=True, use_container_width=True)
+    sources = list(dict.fromkeys(r['source'] for r in evidence['inputs'] if r.get('source')))
+    for i, source in enumerate(sources, 1):
+        if source.startswith(('https://', 'http://')):
+            st.link_button(f'근거 원문 {i}', source)
+        else:
+            st.caption('제공기관: ' + source + ' · 개별 시세 원문 URL 미확인')
+    st.caption('이 근거는 실제 계산 입력값을 설명합니다. 모든 수치를 공시 원문과 수동 대조했다는 뜻은 아닙니다.')
+
+
 def financial_validation_panel(code, context, market_item=None):
     with st.expander(f'{code} · 재무 데이터 검증 · 최근 공시와 5개 결산연도'):
         st.caption('DART 재무정보만 조회합니다. 주가·KIS 연결과 독립적으로 작동합니다. 금액은 원, EPS는 원/주입니다.')
@@ -240,6 +276,7 @@ def financial_validation_panel(code, context, market_item=None):
                            '단위': c['unit'], '판정': c['display_status'], '사유 구분': c['reason_type'], '판정 사유': c['reason'],
                            '대상 기간': c['period'], '원문 출처': ' · '.join(dict.fromkeys(x for x in c['sources'] if x))}
                           for c in checks['checks']], hide_index=True, use_container_width=True)
+            strategy_evidence_panel(checks, code, context)
             ref = checks['reference_metrics']
             st.caption(f"참고 지표 · {ref['reference_period'] or '연간 자료 없음'} · 부채/자본 {ref['debt_to_equity_pct']:.1f}%" if ref['debt_to_equity_pct'] is not None else f"참고 지표 · {ref['reference_period'] or '연간 자료 없음'} · 부채/자본 보류")
             if ref['simple_fcf_won'] is not None:
