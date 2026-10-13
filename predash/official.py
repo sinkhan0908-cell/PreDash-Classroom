@@ -3,11 +3,16 @@ import os
 import re
 import html
 import zipfile
+import time
 from datetime import date, timedelta
 from xml.etree import ElementTree
 from urllib.parse import unquote, urlsplit
 
 import requests
+
+# Public directory only: never cache keys, accounts or financial responses here.
+_DIRECTORY_CACHE = None
+DIRECTORY_TTL_SECONDS = 24 * 60 * 60
 
 
 class DataError(RuntimeError):
@@ -110,15 +115,29 @@ class Official:
         return payload
 
     def corp(self, code):
+        global _DIRECTORY_CACHE
         if self.corps is None:
-            raw = get("https://opendart.fss.or.kr/api/corpCode.xml", {"crtfc_key": self.dart_key}).content
-            try:
-                with zipfile.ZipFile(io.BytesIO(raw)) as z:
-                    root = ElementTree.fromstring(z.read("CORPCODE.xml"))
-                self.corps = {(n.findtext("stock_code") or "").strip(): n.findtext("corp_code") for n in root.findall("list")}
-                self.names = {(n.findtext("stock_code") or "").strip(): n.findtext("corp_name") for n in root.findall("list") if (n.findtext("stock_code") or "").strip()}
-            except (zipfile.BadZipFile, ElementTree.ParseError, KeyError):
-                raise DataError("DART 기업 목록을 읽을 수 없습니다. 키 승인을 확인하세요.") from None
+            if _DIRECTORY_CACHE and time.monotonic() - _DIRECTORY_CACHE['loaded_at'] < DIRECTORY_TTL_SECONDS:
+                self.corps = dict(_DIRECTORY_CACHE['corps'])
+                self.names = dict(_DIRECTORY_CACHE['names'])
+            else:
+                raw = get("https://opendart.fss.or.kr/api/corpCode.xml", {"crtfc_key": self.dart_key}).content
+                try:
+                    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                        root = ElementTree.fromstring(z.read("CORPCODE.xml"))
+                    corps, names = {}, {}
+                    for n in root.findall('list'):
+                        stock = (n.findtext('stock_code') or '').strip()
+                        corp = (n.findtext('corp_code') or '').strip()
+                        name = (n.findtext('corp_name') or '').strip()
+                        if re.fullmatch(r'[0-9]{6}', stock) and re.fullmatch(r'[0-9]{8}', corp) and name:
+                            corps[stock], names[stock] = corp, name
+                    if not corps:
+                        raise ValueError('empty directory')
+                    self.corps, self.names = corps, names
+                    _DIRECTORY_CACHE = {'loaded_at': time.monotonic(), 'corps': dict(corps), 'names': dict(names)}
+                except (zipfile.BadZipFile, ElementTree.ParseError, KeyError, ValueError):
+                    raise DataError("DART 기업 목록 응답을 읽지 못했습니다. 정상 ZIP·상장기업 목록인지 확인이 필요하며, 키 오류로 단정할 수 없습니다.") from None
         if code not in self.corps:
             raise DataError("상장 종목코드를 찾지 못했습니다.")
         return self.corps[code]

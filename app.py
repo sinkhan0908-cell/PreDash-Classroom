@@ -20,7 +20,10 @@ account_settings, connection_form = classroom_module.account_settings, classroom
 from predash.macro import fetch_vix,relative,benchmark,MacroError
 from predash.analysis import review
 from predash.health import status as holding_status
-from predash.official import Official, DataError
+import predash.official as official_module
+if not hasattr(official_module, 'DIRECTORY_TTL_SECONDS'):
+    official_module = importlib.reload(official_module)
+Official, DataError = official_module.Official, official_module.DataError
 import predash.financial_validation as financial_validation_module
 if not hasattr(financial_validation_module, 'quote_date_check'):
     financial_validation_module = importlib.reload(financial_validation_module)
