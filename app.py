@@ -21,7 +21,7 @@ from predash.macro import fetch_vix,relative,benchmark,MacroError
 from predash.analysis import review
 from predash.health import status as holding_status
 import predash.official as official_module
-if not hasattr(official_module, 'DIRECTORY_TTL_SECONDS'):
+if not hasattr(official_module, 'DIRECTORY_BOOTSTRAP_VERSION'):
     official_module = importlib.reload(official_module)
 Official, DataError = official_module.Official, official_module.DataError
 import predash.financial_validation as financial_validation_module

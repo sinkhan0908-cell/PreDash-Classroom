@@ -16,12 +16,15 @@ def zipped(xml):
 
 class DirectoryCacheTests(unittest.TestCase):
     def setUp(self):
+        self.hints = patch.dict(module.KNOWN_COMPANIES, {}, clear=True)
+        self.hints.start()
         self.previous = module._DIRECTORY_CACHE
         module._DIRECTORY_CACHE = None
         self.response = zipped('<result><list><stock_code>005930</stock_code><corp_code>00126380</corp_code><corp_name>삼성전자</corp_name></list></result>')
 
     def tearDown(self):
         module._DIRECTORY_CACHE = self.previous
+        self.hints.stop()
 
     def test_new_clients_share_only_successful_public_directory(self):
         with patch.object(module, 'get', return_value=self.response) as get:

@@ -9,6 +9,8 @@ from xml.etree import ElementTree
 from urllib.parse import unquote, urlsplit
 
 import requests
+from copy import deepcopy
+from predash.company_codes import KNOWN_COMPANIES, DIRECTORY_BOOTSTRAP_VERSION, company_name_key
 
 # Public directory only: never cache keys, accounts or financial responses here.
 _DIRECTORY_CACHE = None
@@ -101,8 +103,11 @@ class Official:
         self.names = {}
         self.price_rows = {}
         self.annual_cache = {}
+        self.verified_companies = {}
 
     def dart(self, endpoint, **params):
+        if endpoint == 'company.json' and params.get('corp_code') in self.verified_companies:
+            return deepcopy(self.verified_companies[params['corp_code']])
         try:
             payload = get("https://opendart.fss.or.kr/api/" + endpoint,
                           {"crtfc_key": self.dart_key, **params}).json()
@@ -116,6 +121,18 @@ class Official:
 
     def corp(self, code):
         global _DIRECTORY_CACHE
+        if code in KNOWN_COMPANIES:
+            hint = KNOWN_COMPANIES[code]
+            corp = hint['corp_code']
+            if corp not in self.verified_companies:
+                info = self.dart('company.json', corp_code=corp) or {}
+                names = {company_name_key(name) for name in hint['names']}
+                if (info.get('stock_code') != code or info.get('corp_code') != corp
+                        or company_name_key(info.get('corp_name')) not in names):
+                    raise DataError('DART 기업개황의 기업명·종목코드·고유번호가 등록 정보와 일치하지 않습니다. 재무 조회를 중단합니다.')
+                self.verified_companies[corp] = deepcopy(info)
+            self.names[code] = self.verified_companies[corp]['corp_name']
+            return corp
         if self.corps is None:
             if _DIRECTORY_CACHE and time.monotonic() - _DIRECTORY_CACHE['loaded_at'] < DIRECTORY_TTL_SECONDS:
                 self.corps = dict(_DIRECTORY_CACHE['corps'])
