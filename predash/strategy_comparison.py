@@ -94,10 +94,10 @@ def table_html(items):
     headers = ''.join(f'<th scope="col">{label}<small>{hint}</small></th>' for label, hint in zip(LABELS, thresholds))
     return '''<style>
     .sc-wrap{overflow-x:auto;background:#fff;border:1px solid #dfe7e2;border-radius:16px;margin:18px 0 10px;box-shadow:0 3px 16px #183b3006}
-    .sc-table{border-collapse:separate;border-spacing:0;width:100%;min-width:1110px;table-layout:fixed;font-size:15px;color:#20372f}
+    .sc-table{border-collapse:separate;border-spacing:0;width:100%;min-width:960px;table-layout:fixed;font-size:15px;color:#20372f}
     .sc-table th,.sc-table td{box-sizing:border-box;text-align:center}
     .sc-table thead th{background:#f1f6f3;color:#254b3b;padding:21px 10px;font-size:15px;font-weight:700;white-space:nowrap;border-bottom:1px solid #dfe7e2}
-    .sc-table thead th:first-child{width:210px;text-align:left;padding-left:24px}
+    .sc-table thead th:first-child{width:180px;text-align:left;padding-left:24px}
     .sc-table thead small{display:block;color:#708178;font-size:11px;font-weight:400;margin-top:7px;line-height:1.5}
     .sc-table tbody td,.sc-table tbody th{padding:25px 10px;border-bottom:1px solid #e8eeea;vertical-align:middle;background:#fff}
     .sc-table tbody tr:last-child>*{border-bottom:0}
