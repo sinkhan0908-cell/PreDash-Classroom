@@ -299,8 +299,12 @@ def strategy_comparison_page():
     if not codes:
         st.info('관심종목 메뉴에서 종목을 추가하면 이 화면에도 표시됩니다.')
         return
+    # Freeze labels: DART can replace a short name with a legal name after refresh.
+    labels = st.session_state.setdefault('comparison_option_labels', {})
+    for code in codes:
+        labels.setdefault(code, f'{names.get(code, code)} · {code}')
     selected = st.multiselect('비교할 관심종목', codes, default=codes,
-                              format_func=lambda c: f'{names.get(c, c)} · {c}', key='comparison_codes')
+                              format_func=lambda c: labels[c], key='comparison_codes')
     if not selected:
         st.info('비교할 종목을 선택하세요.')
         return

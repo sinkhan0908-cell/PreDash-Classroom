@@ -93,3 +93,10 @@ class ComparisonTests(unittest.TestCase):
         self.assertEqual(len(exported['items']), 2)
         self.assertIsNone(exported['items'][1]['result'])
         self.assertIn('timeout', exported['items'][1]['reason'])
+        # A refresh changes watch_names, but must not change rendered widget options.
+        first_labels = dict(st.session_state['comparison_option_labels'])
+        st.button.return_value = False
+        ns['strategy_comparison_page']()
+        formatter = st.multiselect.call_args.kwargs['format_func']
+        self.assertEqual({code: formatter(code) for code in first_labels}, first_labels)
+        self.assertEqual(st.session_state['watch_names']['005930'], self.data['name'])

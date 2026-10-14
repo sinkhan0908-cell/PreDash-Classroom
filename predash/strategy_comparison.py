@@ -69,26 +69,47 @@ def cell(check, index):
 
 
 def table_html(items):
-    esc = lambda value: html.escape(str(value or '미확인'))
+    esc = lambda value: html.escape(str(value if value is not None else '미확인'))
     rows = []
+    short_names = {'005930': '삼성전자', '000660': 'SK하이닉스', '214450': '파마리서치'}
+    thresholds = ('5개 결산점 · 0% 초과', '최근 4년 · 0% 초과', '중앙값 15% 이상', '1배 이하', '5년 연속 양수', '5년 연속 양수')
     for item in items:
-        first = f"<td><strong>{esc(item['name'])}</strong><small>{esc(item['code'])}</small></td>"
+        name = short_names.get(item['code'], item['name'])
+        first = f'<th scope="row" class="sc-company" title="{esc(item["name"])}"><strong>{esc(name)}</strong><small>{esc(item["code"])}</small></th>'
         if item['result']:
             cells = []
             for index, original in enumerate((0, 1, 3, 2, 4, 5)):
                 check = item['result']['checks'][original]
                 text, state = cell(check, index)
-                cells.append(f'<td><span class="sc-{state}" title="{esc(check["reason"])}">{esc(text)}</span></td>')
+                if check['status'] == '판정 보류':
+                    value, label = '—', check['display_status']
+                else:
+                    value, label = text.rsplit(' · ', 1)
+                value_class = 'sc-value sc-words' if index >= 4 else 'sc-value'
+                cells.append(f'<td title="{esc(check["reason"])}"><span class="{value_class}">{esc(value)}</span><span class="sc-badge sc-{state}">{esc(label)}</span></td>')
             body = ''.join(cells)
         else:
-            body = f'<td colspan="6" class="sc-pending">{esc(item["reason"])}</td>'
+            body = f'<td colspan="6" class="sc-empty"><span class="sc-badge sc-pending">확인 필요</span><p>{esc(item["reason"])}</p></td>'
         rows.append('<tr>' + first + body + '</tr>')
+    headers = ''.join(f'<th scope="col">{label}<small>{hint}</small></th>' for label, hint in zip(LABELS, thresholds))
     return '''<style>
-    .sc-wrap{overflow-x:auto;background:#fff;border:1px solid #dce3dc;border-radius:8px;margin:14px 0}
-    .sc-table{border-collapse:collapse;width:100%;min-width:950px;font-size:16px}
-    .sc-table th{background:#eef3ef;color:#183b30;text-align:left;padding:18px 14px;white-space:nowrap}
-    .sc-table td{padding:22px 14px;border-top:1px solid #e3e8e3;vertical-align:middle}
-    .sc-table small{display:block;color:#637267;margin-top:5px}.sc-table strong{font-size:18px}
-    .sc-met,.sc-unmet,.sc-pending{font-weight:600}.sc-met{color:#236445}.sc-unmet{color:#a63742}.sc-pending{color:#6c706e}
-    </style><div class="sc-wrap"><table class="sc-table"><thead><tr><th>종목</th>''' + ''.join(
-        '<th>' + label + '</th>' for label in LABELS) + '</tr></thead><tbody>' + ''.join(rows) + '</tbody></table></div>'
+    .sc-wrap{overflow-x:auto;background:#fff;border:1px solid #dfe7e2;border-radius:16px;margin:18px 0 10px;box-shadow:0 3px 16px #183b3006}
+    .sc-table{border-collapse:separate;border-spacing:0;width:100%;min-width:1110px;table-layout:fixed;font-size:15px;color:#20372f}
+    .sc-table th,.sc-table td{box-sizing:border-box;text-align:center}
+    .sc-table thead th{background:#f1f6f3;color:#254b3b;padding:21px 10px;font-size:15px;font-weight:700;white-space:nowrap;border-bottom:1px solid #dfe7e2}
+    .sc-table thead th:first-child{width:210px;text-align:left;padding-left:24px}
+    .sc-table thead small{display:block;color:#708178;font-size:11px;font-weight:400;margin-top:7px;line-height:1.5}
+    .sc-table tbody td,.sc-table tbody th{padding:25px 10px;border-bottom:1px solid #e8eeea;vertical-align:middle;background:#fff}
+    .sc-table tbody tr:last-child>*{border-bottom:0}
+    .sc-table tbody tr:nth-child(even)>*{background:#fafcfb}
+    .sc-table tbody tr:hover>*{background:#f3f8f5}
+    .sc-table .sc-company{text-align:left;padding-left:24px;position:sticky;left:0;z-index:1;border-right:1px solid #e8eeea}
+    .sc-company strong{display:block;font-size:18px;line-height:1.5;word-break:keep-all;overflow-wrap:anywhere;font-weight:700}
+    .sc-company small{display:block;color:#809087;font-size:12px;letter-spacing:1px;font-weight:400;margin-top:6px}
+    .sc-value{display:block;font-size:23px;font-weight:700;letter-spacing:-.5px;font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.4;margin-bottom:10px}
+    .sc-value.sc-words{font-size:14px;letter-spacing:-.3px}
+    .sc-badge{display:inline-block;border-radius:6px;padding:5px 9px;font-size:12px;line-height:1.3;white-space:nowrap;font-weight:600}
+    .sc-met{background:#e8f4ec;color:#256643}.sc-unmet{background:#fbecef;color:#a63e51}.sc-pending{background:#edf0f2;color:#5a6870}
+    .sc-empty{text-align:left!important;color:#68766e;font-size:14px}.sc-empty p{margin:9px 0 0}
+    .sc-note{font-size:12px;color:#7c8982;margin-bottom:20px}
+    </style><div class="sc-wrap" role="region" aria-label="관심종목 전략 비교표" tabindex="0"><table class="sc-table"><thead><tr><th scope="col">기업<small>종목명 · 종목코드</small></th>''' + headers + '</tr></thead><tbody>' + ''.join(rows) + '</tbody></table></div><div class="sc-note">매출·EPS CAGR: 연평균 성장률 · 화면이 좁으면 표를 좌우로 이동하세요. 판정 사유는 아래 계산 근거에서 확인할 수 있습니다.</div>'
