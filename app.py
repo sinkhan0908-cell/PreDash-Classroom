@@ -32,6 +32,7 @@ strategy_checks = financial_validation_module.strategy_checks
 collection_status = financial_validation_module.collection_status
 export_validation = financial_validation_module.export_validation
 from predash.financial_cache import FinancialCache
+from predash.strategy_comparison import comparison_group, build_comparison, table_html
 
 
 @st.cache_resource
@@ -290,6 +291,112 @@ def financial_validation_panel(code, context, market_item=None):
                            mime='application/json', key=context + '_validation_download_' + code)
 
 
+def strategy_comparison_page():
+    st.title('관심종목 전략 비교')
+    st.caption('같은 기준으로 비교하고, 계산 근거를 확인하세요. 종목 추가·삭제는 관심종목 메뉴에서 관리합니다.')
+    codes = clean_codes(st.session_state.get('watch_codes', []) + st.query_params.get('watch', '').split(','))
+    names = st.session_state.get('watch_names', {})
+    if not codes:
+        st.info('관심종목 메뉴에서 종목을 추가하면 이 화면에도 표시됩니다.')
+        return
+    selected = st.multiselect('비교할 관심종목', codes, default=codes,
+                              format_func=lambda c: f'{names.get(c, c)} · {c}', key='comparison_codes')
+    if not selected:
+        st.info('비교할 종목을 선택하세요.')
+        return
+    force = st.checkbox('재무자료도 강제 재조회', help='선택하지 않으면 유효한 저장 재무자료를 재사용합니다. 종가는 버튼을 누를 때 새로 조회합니다.')
+    refresh = st.button('자료 조회·비교', type='primary')
+    today_date = datetime.now(ZoneInfo('Asia/Seoul')).date()
+    today = today_date.isoformat()
+    memory = public_financial_cache()
+    if refresh:
+        progress = st.progress(0, text='공식 자료를 조회합니다.')
+        for index, code in enumerate(selected):
+            key = 'financial_validation_' + code
+            error_key = 'financial_refresh_error_' + code
+            try:
+                if not api_key('DART_CRTFC_KEY'):
+                    raise DataError('DART 연결 설정이 필요합니다.')
+                data, origin = memory.get(code, lambda: collect_financial_validation(official_client(), code), force=force)
+                st.session_state[key] = data
+                st.session_state['financial_cache_status_' + code] = origin
+                st.session_state.pop(error_key, None)
+                st.session_state.setdefault('watch_names', {})[code] = data['name']
+            except (DataError, ValueError) as exc:
+                st.session_state[error_key] = str(exc)
+            # A failed fresh price request must not silently reuse the old price.
+            quote_key = 'comparison_quote_' + code
+            try:
+                if not price_sources_ready():
+                    raise DataError('공공데이터포털 또는 KIS 시세 연결이 필요합니다.')
+                close, day, _, source = quote_with_fallback(code, official_client(), today_date)
+                day = str(day)
+                if re.fullmatch(r'\d{8}', day):
+                    day = f'{day[:4]}-{day[4:6]}-{day[6:]}'
+                st.session_state[quote_key] = {'close': close, 'date': day, 'source': source,
+                    'fetched_at': datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds')}
+            except (DataError, ValueError) as exc:
+                st.session_state[quote_key] = {'close': None, 'date': None, 'source': None, 'error': str(exc)}
+            progress.progress((index + 1) / len(selected), text=f'조회 {index+1}/{len(selected)}')
+        progress.empty()
+    snapshots, quotes, unavailable = {}, {}, {}
+    for code in selected:
+        data = st.session_state.get('financial_validation_' + code)
+        if data:
+            snapshots[code] = data
+            if memory.remaining(code, data['fetched_at']) <= 0:
+                unavailable[code] = '재무 저장 자료 만료 · 자료 조회·비교를 눌러 갱신하세요.'
+        if st.session_state.get('financial_refresh_error_' + code):
+            unavailable[code] = '최근 재무 조회 실패 · ' + st.session_state['financial_refresh_error_' + code]
+        quote_key = 'comparison_quote_' + code
+        if quote_key in st.session_state:
+            quotes[code] = st.session_state[quote_key]
+        else:
+            item = st.session_state.get('watch_results', {}).get(code, {})
+            lamp = item.get('lamp') or {}
+            quotes[code] = {'close': lamp.get('close'), 'date': lamp.get('date'), 'source': item.get('price_source')}
+    groups = sorted({comparison_group(data) for data in snapshots.values() if comparison_group(data)}, reverse=True)
+    group = st.selectbox('비교할 결산 기간·회계 기준·통화', groups) if groups else None
+    if not group:
+        st.info('자료 조회·비교를 누르면 비교 가능한 결산 기간이 표시됩니다.')
+    st.caption('CFS: 연결 · OFS: 별도 | 매출 5개 결산점 · EPS 최근 4개 연간 값 · 반기 누적값 제외')
+    rows = build_comparison(selected, snapshots, quotes, names, unavailable, group, today)
+    filters = st.radio('표시', ['전체', '계산 완료', '자료 부족·확인 필요'], horizontal=True, key='comparison_filter')
+    if filters == '계산 완료':
+        shown = [r for r in rows if r['result'] and r['result']['summary']['completed'] == r['result']['summary']['total']]
+    elif filters == '자료 부족·확인 필요':
+        shown = [r for r in rows if not r['result'] or any(c['reason_type'] in ('데이터 부족', '원문 확인 필요') for c in r['result']['checks'])]
+    else:
+        shown = rows
+    st.html(table_html(shown))
+    if not shown:
+        st.info('선택한 필터에 해당하는 종목이 없습니다.')
+    st.caption('조건 충족은 매수 추천이 아닙니다. 자료 부족과 공식 적용 불가를 구분하며, 충족 개수로 추천 순위를 매기지 않습니다.')
+    st.dataframe([{'종목': r['name'], '코드': r['code'], '재무 비교 기준': r['group'],
+                   '재무 수집 시각': r['fetched_at'], '종가 기준일': r['quote'].get('date'),
+                   '시세 출처': r['quote'].get('source'), '시세 수집 시각': r['quote'].get('fetched_at'),
+                   '재무 상태': r['reason'] or '저장 자료 유효 · 자동 점검 결과 사용',
+                   '시세 조회 사유': r['quote'].get('error')}
+                  for r in rows], hide_index=True, use_container_width=True)
+    st.caption('원문 수동 대조 완료를 의미하지 않습니다. PEG는 표시된 종가의 기준일·출처·유효기간을 별도로 점검합니다.')
+    candidates = {r['code']: r for r in shown if r['result']}
+    if candidates:
+        st.subheader('선택 종목 · 계산 근거')
+        target = st.selectbox('근거를 확인할 종목', list(candidates),
+                             format_func=lambda c: f'{candidates[c]["name"]} · {c}')
+        result = candidates[target]['result']
+        strategy_evidence_panel(result, target, 'comparison')
+        st.subheader('추가 확인할 항목')
+        for check in result['checks']:
+            if check['status'] != '충족':
+                st.write(f"{check['display_status']} · {check['condition']} · {check['reason']}")
+        st.caption('사업 경쟁력·경영진·성장 지속성은 별도 조사 항목입니다.')
+    export = {'schema_version': 1, 'evaluation_date': today, 'comparison_group': group,
+              'items': rows, 'note': '공개 재무·시세만 포함. 예외 및 비교 제외 사유 확인 필요.'}
+    st.download_button('비교 결과 내려받기', json.dumps(export, ensure_ascii=False, indent=2, allow_nan=False),
+                       file_name=f'strategy-comparison-{today}.json', mime='application/json')
+
+
 def stock_evidence_charts(item):
     if item.get('relative'):
         st.subheader('내 종목은 시장 대비 얼마나 강한가? · '+str(item.get('benchmark','')))
@@ -473,11 +580,11 @@ with st.sidebar:
     st.link_button('교육자료', 'https://stock-dash-11a.streamlit.app/')
     st.link_button('소통 게시판', 'https://etf2x.com/learn/live')
     st.html('<div class="pd-brand-note">나의 투자 흐름을 읽는 공간</div><div class="pd-side-label">투자 워크스페이스</div>')
-    page=st.radio('메뉴',['오늘의 점검','관심종목','투자 근거','내 계좌','모의투자','매매 연습','매매 습관','연결 설정'],label_visibility='collapsed',key='navigation',
+    page=st.radio('메뉴',['오늘의 점검','관심종목','전략 비교','투자 근거','내 계좌','모의투자','매매 연습','매매 습관','연결 설정'],label_visibility='collapsed',key='navigation',
         index=0 if all(account_settings()[k] for k in ('key','secret','cano','product')) else 1,
-        format_func=lambda item:{'오늘의 점검':'01  투자 대시보드','내 계좌':'04  내 계좌 · 보유종목',
-            '관심종목':'02  관심종목 분석','매매 습관':'07  매매 기록 · 습관',
-            '모의투자':'05  모의투자 계좌','매매 연습':'06  매매 연습','연결 설정':'08  데이터 연결','투자 근거':'03  투자 근거 · 비교 차트'}[item])
+        format_func=lambda item:{'오늘의 점검':'01  투자 대시보드','내 계좌':'05  내 계좌 · 보유종목',
+            '관심종목':'02  관심종목 분석','전략 비교':'03  전략 비교','매매 습관':'08  매매 기록 · 습관',
+            '모의투자':'06  모의투자 계좌','매매 연습':'07  매매 연습','연결 설정':'09  데이터 연결','투자 근거':'04  투자 근거 · 비교 차트'}[item])
     st.divider()
     large_text=st.toggle('글자 크게 보기',value=st.query_params.get('text','')=='large')
     if large_text:st.query_params['text']='large'
@@ -725,6 +832,9 @@ elif page=='매매 연습':
                 '수량':t['quantity'],'모의 체결가':t['price'],'종가 기준일':t['price_date'],'판단 이유':t['note']}
                 for t in reversed(account['trades'])],hide_index=True,use_container_width=True)
     st.caption('수익률은 시작 자금 대비 가상 현금과 종가 평가액의 합계 기준입니다. 실제 투자 성과를 검증하는 백테스트가 아닙니다.')
+    st.stop()
+elif page=='전략 비교':
+    strategy_comparison_page()
     st.stop()
 elif page=='관심종목':
     st.title('관심종목 점검')
