@@ -32,6 +32,7 @@ strategy_checks = financial_validation_module.strategy_checks
 collection_status = financial_validation_module.collection_status
 export_validation = financial_validation_module.export_validation
 from predash.financial_cache import FinancialCache
+from predash.kis_probe import DemoPublicProbe, demo_keys as probe_demo_keys, run_probe as run_kis_probe
 from predash.lynch import collect_lynch, analyse as analyse_lynch, cards_html as lynch_cards_html, BS as LYNCH_BS, SOURCE as LYNCH_SOURCE
 from predash.strategy_comparison import comparison_group, build_comparison, table_html
 
@@ -290,6 +291,53 @@ def financial_validation_panel(code, context, market_item=None):
                            json.dumps(export_validation(data, checks), ensure_ascii=False, indent=2, allow_nan=False),
                            file_name=f'financial-validation-{code}-{data["asof"]}.json',
                            mime='application/json', key=context + '_validation_download_' + code)
+
+
+def kis_demo_financial_probe_panel():
+    with st.expander('KIS 모의 재무 조회 테스트', expanded=True):
+        st.caption('DART와 별도로 실행합니다. 모의 환경에서 공개 시세·연간 EPS 응답만 확인합니다.')
+        try:
+            stored = dict(st.secrets)
+        except (FileNotFoundError,KeyError):
+            stored = {}
+        for name in ('KIS_ENV','KIS_APP_KEY','KIS_APP_SECRET','KIS_DEMO_APP_KEY','KIS_DEMO_APP_SECRET'):
+            if name not in stored and os.getenv(name): stored[name]=os.getenv(name)
+        keys = probe_demo_keys(st.session_state.get('classroom_credentials',{}),stored)
+        if st.session_state.get('classroom_kis_disabled'): keys={'key':'','secret':''}
+        code = st.text_input('테스트 종목코드',value='005930',max_chars=6,key='kis_probe_code')
+        ready=all(keys.values())
+        if not ready:st.info('사용 가능한 모의 App Key·Secret 쌍이 없습니다. 실전 키로 자동 전환하지 않습니다.')
+        if st.button('KIS 모의 재무 조회 테스트 실행',type='primary',disabled=not ready,key='kis_probe_run'):
+            try:
+                client=st.session_state.get('_kis_demo_public_probe')
+                if not isinstance(client,DemoPublicProbe) or client.key!=keys['key'] or client.secret!=keys['secret']:
+                    client=DemoPublicProbe(keys)
+                    st.session_state['_kis_demo_public_probe']=client
+                with st.spinner('모의 현재가와 연간 EPS API를 각각 확인합니다…'):
+                    result=run_kis_probe(client,code.strip())
+                st.session_state['_kis_probe_result_'+code]=result
+            except BrokerError as exc:
+                st.error(str(exc))
+        result=st.session_state.get('_kis_probe_result_'+code)
+        if not result:return
+        st.caption(f"모의 환경 · 종목 {result['code']} · 실행 {result['fetched_at']}")
+        if result.get('authentication_error'):
+            st.error('토큰 발급 실패 · '+result['authentication_error'])
+        else:
+            st.dataframe([{'조회 항목':r['api'],'API 결과':'성공' if r['success'] else '실패','응답 코드':r['status_code'] or '—',
+                           '메시지 코드':r['message_code'] or '—','설명':r['reason']} for r in result['results']],hide_index=True,use_container_width=True)
+            for item in result['results']:
+                if item['values']:
+                    st.write('**현재가 API 응답값**')
+                    st.dataframe([{'항목':label,'값':f"{item['values'][field]:,.2f}" if item['values'].get(field) is not None else '미확인'}
+                                  for field,label in [('stck_prpr','현재가 (원)'),('eps','EPS (원/주)'),('per','PER (배)')]],hide_index=True,use_container_width=True)
+                if item['annual_eps']:
+                    st.write('**연간 EPS 응답 기간**')
+                    st.dataframe([{'결산 년월':r['period'],'EPS (원/주)':r['eps']} for r in item['annual_eps']],hide_index=True,use_container_width=True)
+                    valid=sum(r['eps'] is not None for r in item['annual_eps'])
+                    st.caption(f"숫자 EPS {valid}개 기간 확인 · 추가 페이지 {'있음·미검증' if item.get('more_pages') else '표시 없음'}")
+        st.caption('테스트 성공은 재무자료 대체·5년 CAGR 계산 검증 완료를 뜻하지 않습니다. 키·토큰·계좌정보와 증권사 응답 원문은 결과에 포함하지 않습니다.')
+        st.download_button('KIS 테스트 결과 내려받기',json.dumps(result,ensure_ascii=False,indent=2,allow_nan=False),file_name=f"kis-demo-financial-test-{result['code']}.json",mime='application/json',key='kis_probe_download')
 
 
 def lynch_page():
@@ -1280,6 +1328,7 @@ CUSTOMS_API_KEY = "내 관세청 키"''',language='toml')
     st.subheader('02 · 한국투자증권 계좌')
     st.caption('증권사 App Key·Secret·계좌번호는 Streamlit Secrets에 저장하지 않고 현재 접속 세션에서만 사용합니다.')
     connection_form()
+    kis_demo_financial_probe_panel()
     if kis_connected:
         st.caption(f"현재 KIS 설정 · {'실전 조회' if account_settings()['mode']=='real' else '모의투자'} · 키와 계좌번호 원문은 표시하지 않습니다.")
         if st.button('KIS 연결 진단 · 잔고 조회 권한 확인',type='primary',use_container_width=True):
