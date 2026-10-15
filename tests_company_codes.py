@@ -19,6 +19,11 @@ def response(hint, code, **changes):
 
 
 class CompanyCodeTests(unittest.TestCase):
+    def setUp(self):
+        module._COMPANY_CACHE.clear()
+    def tearDown(self):
+        module._COMPANY_CACHE.clear()
+
     def test_registered_stocks_never_download_full_directory_even_after_restart(self):
         for code, hint in KNOWN_COMPANIES.items():
             with self.subTest(code=code), patch.object(module, '_DIRECTORY_CACHE', None), patch.object(module, 'get', return_value=response(hint, code)) as get:
@@ -27,7 +32,7 @@ class CompanyCodeTests(unittest.TestCase):
                     self.assertEqual(client.corp(code), hint['corp_code'])
                     self.assertEqual(client.dart('company.json', corp_code=hint['corp_code'])['stock_code'], code)
                     self.assertEqual(client.corp(code), hint['corp_code'])
-                self.assertEqual(get.call_count, 2)
+                self.assertEqual(get.call_count, 1)
                 self.assertTrue(all(c.args[0].endswith('/company.json') for c in get.call_args_list))
                 self.assertIsNone(module._DIRECTORY_CACHE)
 

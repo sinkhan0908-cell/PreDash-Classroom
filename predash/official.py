@@ -4,6 +4,9 @@ import re
 import html
 import zipfile
 import time
+import hashlib
+from collections import OrderedDict
+from threading import RLock
 from datetime import date, timedelta
 from xml.etree import ElementTree
 from urllib.parse import unquote, urlsplit
@@ -15,6 +18,29 @@ from predash.company_codes import KNOWN_COMPANIES, DIRECTORY_BOOTSTRAP_VERSION, 
 # Public directory only: never cache keys, accounts or financial responses here.
 _DIRECTORY_CACHE = None
 DIRECTORY_TTL_SECONDS = 24 * 60 * 60
+COMPANY_LOOKUP_VERSION = 2
+_COMPANY_CACHE = OrderedDict()
+_COMPANY_LOCK = RLock()
+COMPANY_TTL_SECONDS = 24 * 60 * 60
+# Only public identity / fiscal-year metadata. Never store credentials or accounts.
+COMPANY_FIELDS = ('status','corp_code','stock_code','corp_name','corp_name_eng','acc_mt','induty_code','hm_url','est_dt')
+
+
+def company_cache_key(key, corp):
+    return (hashlib.sha256(key.encode()).hexdigest(), corp)
+
+
+def validate_company(payload, corp):
+    if payload.get('corp_code') != corp:
+        raise DataError('DART 기업개황의 고유번호가 요청과 일치하지 않습니다.')
+    hint = next(((code,hint) for code,hint in KNOWN_COMPANIES.items() if hint['corp_code']==corp),None)
+    if hint:
+        code, info = hint
+        if (payload.get('stock_code') != code or company_name_key(payload.get('corp_name')) not in {company_name_key(n) for n in info['names']}):
+            raise DataError('DART 기업개황의 기업명·종목코드·고유번호가 등록 정보와 일치하지 않습니다.')
+    if not payload.get('corp_name') or not re.fullmatch(r'(0[1-9]|1[0-2])', str(payload.get('acc_mt',''))):
+        raise DataError('DART 기업개황의 기업명 또는 결산월이 누락됐습니다. 추정하지 않고 중단합니다.')
+
 
 
 class DataError(RuntimeError):
@@ -39,7 +65,7 @@ def dart_error(code):
 def get(url, params):
     path = urlsplit(url).path
     labels = {"corpCode.xml": "DART 기업명·종목코드 목록", "document.xml": "DART 사업보고서 원문",
-              "company.json": "DART 기업개황", "fnlttSinglAcntAll.json": "DART 결산 실적", "list.json": "DART 공시 목록"}
+              "company.json": "DART 기업개황", "company.xml": "DART 기업개황(XML)", "fnlttSinglAcntAll.json": "DART 결산 실적", "list.json": "DART 공시 목록"}
     label = labels.get(path.rsplit("/",1)[-1], "공공데이터포털 주식시세")
     for attempt in range(2):
         try:
@@ -106,17 +132,45 @@ class Official:
         self.verified_companies = {}
 
     def dart(self, endpoint, **params):
-        if endpoint == 'company.json' and params.get('corp_code') in self.verified_companies:
-            return deepcopy(self.verified_companies[params['corp_code']])
+        company = endpoint == 'company.json'
+        corp = params.get('corp_code')
+        cache_key = company_cache_key(self.dart_key, corp) if company else None
+        if company:
+            with _COMPANY_LOCK:
+                cached = _COMPANY_CACHE.get(cache_key)
+                if cached and time.monotonic() - cached['loaded_at'] < COMPANY_TTL_SECONDS:
+                    _COMPANY_CACHE.move_to_end(cache_key)
+                    return deepcopy(cached['payload'])
+                _COMPANY_CACHE.pop(cache_key, None)
         try:
-            payload = get("https://opendart.fss.or.kr/api/" + endpoint,
-                          {"crtfc_key": self.dart_key, **params}).json()
+            try:
+                payload = get("https://opendart.fss.or.kr/api/" + endpoint,
+                              {"crtfc_key": self.dart_key, **params}).json()
+            except DataError as exc:
+                # Same official company API, alternate documented serialization.
+                # Authentication / quota / identity errors must never trigger fallback.
+                transient = any(text in str(exc) for text in ('응답 시간이 초과', '서버에 연결하지 못', 'HTTP 502', 'HTTP 503', 'HTTP 504'))
+                if not company or not transient:
+                    raise
+                try:
+                    xml = get('https://opendart.fss.or.kr/api/company.xml', {'crtfc_key':self.dart_key, **params})
+                    root = ElementTree.fromstring(xml.content)
+                    payload = {node.tag:node.text or '' for node in root}
+                except ElementTree.ParseError:
+                    raise DataError('DART 기업개황: JSON 조회 실패 후 XML 응답도 읽지 못했습니다.') from None
         except ValueError:
             raise DataError("DART 응답 형식 오류") from None
         if payload.get("status") == "013":
             return None
         if payload.get("status") != "000":
             raise DataError(dart_error(payload.get("status")))
+        if company:
+            validate_company(payload, corp)
+            payload = {k:payload[k] for k in COMPANY_FIELDS if k in payload}
+            with _COMPANY_LOCK:
+                _COMPANY_CACHE[cache_key] = {'loaded_at':time.monotonic(), 'payload':deepcopy(payload)}
+                while len(_COMPANY_CACHE) > 256:
+                    _COMPANY_CACHE.popitem(last=False)
         return payload
 
     def corp(self, code):
@@ -450,4 +504,5 @@ def demo():
             "years": [{"year": 2023, "revenue": 10000, "profit": 1100, "url": ""},
                       {"year": 2024, "revenue": 12500, "profit": 1600, "url": ""},
                       {"year": 2025, "revenue": 15000, "profit": 2100, "url": ""}]}
+
 
