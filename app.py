@@ -32,6 +32,7 @@ strategy_checks = financial_validation_module.strategy_checks
 collection_status = financial_validation_module.collection_status
 export_validation = financial_validation_module.export_validation
 from predash.financial_cache import FinancialCache
+from predash.lynch import collect_lynch, analyse as analyse_lynch, cards_html as lynch_cards_html, BS as LYNCH_BS, SOURCE as LYNCH_SOURCE
 from predash.strategy_comparison import comparison_group, build_comparison, table_html
 
 
@@ -291,7 +292,107 @@ def financial_validation_panel(code, context, market_item=None):
                            mime='application/json', key=context + '_validation_download_' + code)
 
 
+def lynch_page():
+    st.title('린치 고성장주 정량 점검')
+    st.caption('이익 성장 · 성장 대비 가격 · 재무 상태 | 공개 재무자료와 종가로 확인하는 첫 점검')
+    codes = clean_codes(st.session_state.get('watch_codes', []) + st.query_params.get('watch', '').split(','))
+    if not codes:
+        st.info('관심종목 분석에서 종목을 추가해 주세요.')
+        return
+    labels = st.session_state.setdefault('lynch_option_labels', {})
+    for code in codes:
+        labels.setdefault(code, f"{st.session_state.get('watch_names', {}).get(code, code)} · {code}")
+    code = st.selectbox('점검할 관심종목', codes, format_func=lambda c: labels[c], key='lynch_company')
+    st.caption('계산 설정: 최근 5개 완료 사업연도 → 4년 CAGR · 연결 우선 · 가격은 최근 연간 기본 EPS 기준. 이 설정은 린치가 지정한 고정 공식이 아닙니다.')
+    key = 'lynch_data_' + code
+    today = datetime.now(ZoneInfo('Asia/Seoul')).date()
+    if st.button('최신 자료 조회·점검', type='primary', key='lynch_refresh'):
+        try:
+            if not api_key('DART_CRTFC_KEY'):
+                raise DataError('DART 연결 설정이 필요합니다.')
+            with st.spinner('DART 공식 재무자료와 종가를 조회합니다…'):
+                data = collect_lynch(official_client(), code, today)
+                quote = {}
+                try:
+                    close, day, _, source = quote_with_fallback(code, official_client(), today)
+                    day = str(day)
+                    if re.fullmatch(r'\d{8}', day): day = f'{day[:4]}-{day[4:6]}-{day[6:]}'
+                    quote = {'close':close,'date':day,'source':source,
+                             'fetched_at':datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds')}
+                except (DataError, ValueError) as exc:
+                    quote = {'error':str(exc)}
+                st.session_state[key] = {'data':data,'quote':quote}
+                st.session_state.pop(key + '_error', None)
+        except (DataError, ValueError) as exc:
+            st.session_state[key + '_error'] = str(exc)
+    saved = st.session_state.get(key)
+    if st.session_state.get(key + '_error'):
+        st.error('최근 조회 실패 · ' + st.session_state[key + '_error'])
+        st.info('이전 자료로 새 판정을 만들지 않습니다. 다시 조회해 주세요.')
+        return
+    if not saved:
+        st.info('최신 자료 조회·점검을 누르면 세 영역의 계산과 근거가 표시됩니다.')
+        return
+    data, quote = saved['data'], saved['quote']
+    fetched = datetime.fromisoformat(data['fetched_at'])
+    if (datetime.now(ZoneInfo('Asia/Seoul'))-fetched).total_seconds() > 86400:
+        st.warning('조회 후 24시간이 지났습니다. 최신 자료 조회·점검을 눌러 갱신해 주세요.')
+        return
+    result = analyse_lynch(data, quote, today.isoformat())
+    st.subheader(f"{data['name']} · {code}")
+    st.caption(f"재무 조회 {data['fetched_at']} · {'연결' if data['basis']=='CFS' else '별도'} 재무제표 · 종가 {quote.get('date','미확인')} · {quote.get('source','출처 미확인')}")
+    st.html(lynch_cards_html(result))
+    st.subheader('01  이익 성장')
+    st.caption('원문 참고: 고성장주 이익 성장 20~25% 선호. 초과는 자동 탈락이 아니라 지속 가능성 확인 대상입니다.')
+    st.dataframe([{'연도':r['year'],'기본 EPS (원/주)':f"{r['value']:,.2f}" if r['value'] is not None else '미확인',
+                   '전년 대비':f"{r['growth']:+.2f}%" if r['growth'] is not None else '—', '변화':r['note']} for r in result['history']], hide_index=True, use_container_width=True)
+    if result['growth_gaps']:
+        st.warning(' · '.join(result['growth_gaps']))
+    st.caption('양수 EPS가 연속 5개 있고 인접 공시의 비교 EPS가 일치할 때 CAGR을 계산합니다. 중간 적자 제한은 구현 설정입니다. 주식 분할·재작성 공시 전체 수동 대조 완료를 의미하지 않습니다.')
+    st.subheader('02  성장 대비 가격')
+    st.write(f"종가 **{quote['close']:,.0f}원** · {quote.get('date')}" if quote.get('close') is not None else '종가 미확인')
+    st.caption('원문 참고점: PER이 이익 성장률의 절반이면 긍정적, 비슷하면 적정 참고점, 두 배이면 부정적. PEG 환산 0.5 · 1 · 2배이며 매수 신호가 아닙니다.')
+    st.caption('PER = 종가 ÷ 최근 연간 기본 EPS | 과거 PEG = PER ÷ 4년 EPS CAGR(%)')
+    if result['price_gap'] or quote.get('error'):
+        st.warning(result['price_gap'] or quote['error'])
+        if quote.get('error'): st.caption(quote['error'])
+    elif result['peg'] is None:
+        st.info('양수 성장률과 비교 가능한 EPS가 필요하여 PEG는 계산 보류입니다.')
+    latest_period = max((r.get('period_end') or '' for r in data['rows']),default='')
+    st.caption(f"최근 수집 보고기간 {latest_period} · PER 분모는 {result['eps_year']}년 연간 EPS이며 이후 분기 이익은 반영하지 않습니다. 사용 종가의 날짜·출처와 7일 유효 범위를 점검합니다.")
+    st.subheader('03  재무 상태')
+    st.caption('금액은 억원 · 같은 보고서 종류의 전년 동기 말과 비교 · 합격·탈락 임계값 없음')
+    balances = data.get('lynch',{}).get('balances',[])
+    if len(balances)==2:
+        previous,current=balances
+        rows=[]
+        for name in LYNCH_BS:
+            a=previous['accounts'].get(name,{}); b=current['accounts'].get(name,{})
+            av,bv=a.get('value'),b.get('value')
+            rows.append({'항목':name, f"전년 {previous['date'] or previous['year']}":f'{av/1e8:,.2f}' if av is not None else '미확인',
+                         f"현재 {current['date'] or current['year']}":f'{bv/1e8:,.2f}' if bv is not None else '미확인',
+                         '증감 (억원)':f'{(bv-av)/1e8:+,.2f}' if av is not None and bv is not None else '—',
+                         '확인 사유':' / '.join(dict.fromkeys(v for v in (a.get('reason'),b.get('reason'),previous.get('error'),current.get('error')) if v))})
+        st.dataframe(rows, hide_index=True, use_container_width=True)
+    st.caption('차입금은 부채총계와 다릅니다. 세부 계정 누락·포괄 계정과의 중복 가능성 때문에 총차입금·순차입금은 추정하지 않습니다. 단기 금융상품과 리스부채는 이번 표 범위에서 제외합니다.')
+    with st.expander('계산 근거 · 원문 · 미확인 항목'):
+        st.caption('CAGR = [(마지막 EPS ÷ 처음 EPS)^(1/4) − 1] × 100. 전년 EPS가 0·음수이면 성장률 대신 전환 상태를 표시합니다.')
+        source_rows=[{'기간':str(r['year']),'항목':'기본 EPS','기준일':r['period_end'],'원문':r['source'],'사유':r.get('data_gap')} for r in result['history']]
+        source_rows += [{'기간':str(b['year']),'항목':'현금·차입금','기준일':b['date'],'원문':b['source'],'사유':b.get('error')} for b in balances]
+        st.dataframe(source_rows,hide_index=True,use_container_width=True)
+        for index,url in enumerate(dict.fromkeys(r['원문'] for r in source_rows if r['원문']),1):
+            st.link_button(f'DART 공시 원문 {index}',url)
+        st.link_button('린치 참고 도서 · 출판사', LYNCH_SOURCE)
+        st.caption('원문 위치: One Up on Wall Street 13장 Some Famous Numbers, 15장 The Final Checklist의 Fast Growers 및 공통 항목. 계산 기간·양수 제한·종가 유효기간은 구현 설정입니다.')
+        st.caption('실제 사업 확장의 지속성은 이번 범위에 포함하지 않습니다. API 자동 점검은 공시 전체의 수동 검증과 다릅니다.')
+    st.download_button('점검 결과·근거 내려받기',json.dumps({'schema_version':1,'analysis':result,'financial':data},ensure_ascii=False,indent=2,allow_nan=False),file_name=f'lynch-{code}-{today}.json',mime='application/json',key='lynch_export')
+
+
 def strategy_comparison_page():
+    mode = st.radio('분석 방식', ['린치 고성장주 정량 점검', '기존 6개 조건 비교'], horizontal=True, key='strategy_mode')
+    if mode == '린치 고성장주 정량 점검':
+        lynch_page()
+        return
     st.title('관심종목 전략 비교')
     st.caption('같은 기준으로 비교하고, 계산 근거를 확인하세요. 종목 추가·삭제는 관심종목 메뉴에서 관리합니다.')
     codes = clean_codes(st.session_state.get('watch_codes', []) + st.query_params.get('watch', '').split(','))
@@ -1497,3 +1598,4 @@ else:
                 lines=''.join(f"<div class='pd-check'><b>{i:02d}</b>{html.escape(label)} · {html.escape(value)}</div>" for i,(label,value) in enumerate(checks,1))
                 st.html("<div class='pd-evidence'><h3>오늘의 확인 순서</h3>"+lines+"<p>계좌 조회 "+html.escape(str(snap['fetched']))+"</p></div>")
             st.caption('자료: 한국투자증권 · OpenDART · 공공데이터포털. 확인 순서는 매수·매도 추천이 아닙니다.')
+
