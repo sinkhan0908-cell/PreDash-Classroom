@@ -1,6 +1,7 @@
 """PreDash foundation: purchaser-owned, read-only account review."""
 import hmac
 import hashlib
+import math
 import html
 import json
 import os
@@ -33,6 +34,7 @@ strategy_checks = financial_validation_module.strategy_checks
 collection_status = financial_validation_module.collection_status
 export_validation = financial_validation_module.export_validation
 from predash.financial_cache import FinancialCache
+from predash.financial_store import select_snapshot as select_financial_snapshot, persist as persist_financial_snapshot, clean_snapshot as check_financial_snapshot
 from predash.cloud_store import CloudStore, StorageError, settings as cloud_settings, watch_from_payload as watch_from_cloud
 import predash.kis_probe as kis_probe_module
 if getattr(kis_probe_module, 'REFERENCE_VERSION', 0) < 1:
@@ -362,7 +364,7 @@ def cloud_save_current(codes,names):
 
 def cloud_storage_panel():
     st.subheader('Supabase · 관심종목 저장')
-    st.caption('한 개인용 대시보드의 관심종목을 기기 간 공유합니다. 투자일지·분석 결과의 자동 저장은 이번 단계에 포함하지 않습니다.')
+    st.caption('한 개인용 대시보드의 관심종목을 기기 간 공유합니다. 린치 분석의 최신 성공 입력자료도 자동 저장합니다. 투자일지와 전체 분석 이력 저장은 제외합니다.')
     try:
         client,fingerprint=cloud_client()
         if client is None:
@@ -484,6 +486,60 @@ def kis_lynch_result(saved, today):
     st.download_button('KIS 점검 결과·근거 내려받기',json.dumps({'schema_version':1,'analysis':result,'evidence':saved},ensure_ascii=False,indent=2,allow_nan=False),file_name=f"lynch-kis-{data['code']}-{today}.json",mime='application/json',key='lynch_kis_export')
 
 
+def lynch_restore_saved(code):
+    key='lynch_data_'+code
+    if st.session_state.get(key):return
+    snapshot=st.session_state.get('_cloud_snapshot')
+    if snapshot:
+        restored=select_financial_snapshot(snapshot['payload'],code)
+        if restored:
+            st.session_state[key]=restored
+            last=restored['_storage'].get('last_attempt') or {}
+            if last.get('status')=='failed':
+                st.session_state[key+'_error']='최근 '+('가격' if last.get('kind')=='price' else '재무')+' 최신 확인 실패 · '+str(last.get('at'))
+
+
+def lynch_save_remote(code, saved=None, failed=False, kind='financial'):
+    try:
+        client,_=cloud_client()
+        if client is None:
+            st.session_state['lynch_storage_note_'+code]='Supabase 미설정 · 이번 결과는 현재 접속 세션에만 유지됩니다.'
+            return
+        previous=st.session_state.get('_cloud_snapshot')
+        row=persist_financial_snapshot(client,code,saved,attempt_kind=kind,failed=failed)
+        if not previous or previous['payload'].get('stocks')==row['payload'].get('stocks'):
+            st.session_state['_cloud_snapshot']=row
+        else:
+            st.session_state['_cloud_error']='다른 기기의 관심종목 변경이 있습니다. 목록을 다시 불러와 주세요.'
+        st.session_state['lynch_storage_note_'+code]='Supabase 재무자료 '+('실패 이력 기록됨 · 성공본 보존' if failed else '저장 응답 확인됨')
+    except StorageError as exc:
+        st.session_state['lynch_storage_note_'+code]='클라우드 저장 확인 실패 · '+str(exc)
+
+
+def lynch_refresh_price(saved, today):
+    code=saved['data']['code']
+    if saved.get('source')=='KIS':
+        rows=kis_reference_client().price_history(code,today)
+        valid=[]
+        for row in rows:
+            day=str(row.get('basDt',''))
+            try:
+                parsed=datetime.strptime(day,'%Y%m%d').date()
+                value=float(str(row.get('clpr','')).replace(',',''))
+            except (ValueError,TypeError):continue
+            if parsed<today and value>0 and math.isfinite(value):valid.append((parsed,value))
+        if not valid:raise BrokerError('이전 거래일 종가 미확인')
+        parsed,close=max(valid)
+        quote={'close':close,'date':parsed.isoformat(),'source':'KIS 모의 일별 시세','kind':'종가'}
+    else:
+        close,day,_,source=quote_with_fallback(code,official_client(),today)
+        day=str(day)
+        if re.fullmatch(r'\d{8}',day):day=f'{day[:4]}-{day[4:6]}-{day[6:]}'
+        quote={'close':close,'date':day,'source':source,'kind':'종가'}
+    quote['fetched_at']=datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds')
+    return {**saved,'quote':quote}
+
+
 def lynch_page():
     st.title('린치 고성장주 정량 점검')
     st.caption('이익 성장 · 성장 대비 가격 · 재무 상태 | 공개 재무자료와 종가로 확인하는 첫 점검')
@@ -498,9 +554,12 @@ def lynch_page():
     st.caption('계산 설정: 최근 5개 완료 사업연도 → 4년 CAGR · 연결 우선 · 가격은 최근 연간 기본 EPS 기준. 이 설정은 린치가 지정한 고정 공식이 아닙니다.')
     key = 'lynch_data_' + code
     today = datetime.now(ZoneInfo('Asia/Seoul')).date()
+    lynch_restore_saved(code)
     kis_direct = st.checkbox('KIS 성장·가격으로 바로 조회 · DART 대기 생략', value=False, key='lynch_kis_direct')
     st.caption('기본 경로는 DART 우선·실패 시 KIS입니다. KIS 바로 조회는 성장·가격만 참고 계산하고 재무 상태는 미확인으로 남깁니다.')
-    if st.button('최신 자료 조회·점검', type='primary', key='lynch_refresh'):
+    previous_saved=st.session_state.get(key)
+    refresh_requested=st.button('최신 자료 조회·점검', type='primary', key='lynch_refresh')
+    if refresh_requested:
         if kis_direct:
             try:
                 with st.spinner('KIS 연간 EPS와 가격을 조회합니다…'):
@@ -533,19 +592,45 @@ def lynch_page():
                         st.session_state.pop(key+'_error',None)
                 except (BrokerError,ValueError) as kis_exc:
                     st.session_state[key+'_error']=str(exc)+' · KIS 대체 조회: '+str(kis_exc)
+    if refresh_requested:
+        if not st.session_state.get(key+'_error') and st.session_state.get(key):
+            try:check_financial_snapshot(st.session_state[key])
+            except StorageError as exc:
+                if previous_saved:st.session_state[key]=previous_saved
+                st.session_state[key+'_error']='새 응답의 연간 EPS 확인 불완전 · '+str(exc)
+        error=st.session_state.get(key+'_error')
+        if not error and st.session_state.get(key,{}).get('quote',{}).get('close'):
+            st.session_state.pop(key+'_price_error',None)
+        lynch_save_remote(code,st.session_state.get(key) if not error else None,failed=bool(error))
+    price_requested=st.button('가격만 새로 조회 · 저장 EPS 재사용',key='lynch_price_refresh',disabled=not st.session_state.get(key))
+    if price_requested and not refresh_requested:
+        try:
+            st.session_state[key]=lynch_refresh_price(st.session_state[key],today)
+            st.session_state.pop(key+'_price_error',None)
+            lynch_save_remote(code,st.session_state[key],kind='price')
+        except (BrokerError,DataError,ValueError) as exc:
+            st.session_state[key+'_price_error']=str(exc)
+            lynch_save_remote(code,failed=True,kind='price')
     saved = st.session_state.get(key)
-    if st.session_state.get(key + '_error'):
-        st.error('최근 조회 실패 · ' + st.session_state[key + '_error'])
-        st.info('이전 자료로 새 판정을 만들지 않습니다. 다시 조회해 주세요.')
-        return
+    error=st.session_state.get(key+'_error')
+    if error:
+        st.warning('최신 여부 확인 실패 · '+error)
+        if not saved:return
+        st.caption('이전 성공 자료 사용 · 원래 수집 시각과 대상 기간을 유지합니다. 새 자료가 없다는 뜻은 아닙니다.')
+    if st.session_state.get(key+'_price_error'):
+        st.warning('최근 가격 조회 실패 · 이전 가격 기준일 유지 · '+st.session_state[key+'_price_error'])
     if not saved:
-        st.info('최신 자료 조회·점검을 누르면 세 영역의 계산과 근거가 표시됩니다.')
+        st.info('저장 자료가 없습니다. 최신 자료 조회·점검을 눌러 주세요.')
         return
     data, quote = saved['data'], saved['quote']
     fetched = datetime.fromisoformat(data['fetched_at'])
     if (datetime.now(ZoneInfo('Asia/Seoul'))-fetched).total_seconds() > 86400:
-        st.warning('조회 후 24시간이 지났습니다. 최신 자료 조회·점검을 눌러 갱신해 주세요.')
-        return
+        st.warning('24시간 이상 지난 재무자료 사용 · 최신 여부를 확인하지 못했습니다. 필요할 때 최신 자료 조회·점검을 눌러 주세요.')
+    if quote.get('refresh_error'):st.warning(quote['refresh_error'])
+    if saved.get('_storage',{}).get('restored'):
+        st.info('Supabase 저장본에서 복원 · 원자료 수집 '+data['fetched_at'])
+    st.caption(st.session_state.get('lynch_storage_note_'+code,'저장 자료 우선 표시 · 외부 API를 자동으로 다시 호출하지 않습니다.'))
+    st.caption('자료가 없거나 바뀌었는지 자동 비교하는 기능은 다음 단계입니다. 이번 계산은 표시된 자료와 오늘의 평가 기준일을 사용합니다.')
     if saved.get('source') == 'KIS':
         kis_lynch_result(saved,today)
         return

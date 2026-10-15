@@ -77,7 +77,7 @@ class LynchTests(unittest.TestCase):
         st.session_state={'watch_codes':['005930'],'watch_names':{},'lynch_data_005930':{'data':self.data,'quote':self.quote}}
         st.query_params={}
         st.selectbox.return_value='005930';st.button.return_value=False
-        ns=dict(st=st,datetime=datetime,ZoneInfo=ZoneInfo,clean_codes=lambda codes:[c for c in codes if c],re=re,json=json,
+        ns=dict(lynch_restore_saved=MagicMock(),lynch_save_remote=MagicMock(),st=st,datetime=datetime,ZoneInfo=ZoneInfo,clean_codes=lambda codes:[c for c in codes if c],re=re,json=json,
                 analyse_lynch=analyse,lynch_cards_html=cards_html,LYNCH_BS=BS,LYNCH_SOURCE=SOURCE)
         node=next(n for n in ast.parse(Path('app.py').read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='lynch_page')
         exec(compile(ast.Module(body=[node],type_ignores=[]),'app.py','exec'),ns)

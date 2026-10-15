@@ -31,3 +31,7 @@ SUPABASE_SECRET_KEY = "서버용 Secret key"
 - DB 통신 성공은 실제 사용자 프로젝트 설정 후 읽기·쓰기·다른 기기 확인까지 검증해야 합니다. 자동 테스트는 해당 실서버 검증을 대신하지 않습니다.
 
 공식 참고: https://supabase.com/docs/guides/getting-started/api-keys
+
+## 린치 재무자료 확장
+
+최신 성공 입력자료의 자동 저장·복원이 추가되었습니다. 새 SQL이나 키 설정은 필요하지 않습니다. 동작 범위와 실제 확인 순서는 SUPABASE-FINANCIAL-CACHE.md를 참고하세요. 투자일지와 전체 분석 이력 자동 저장은 여전히 포함하지 않습니다.
