@@ -32,7 +32,12 @@ strategy_checks = financial_validation_module.strategy_checks
 collection_status = financial_validation_module.collection_status
 export_validation = financial_validation_module.export_validation
 from predash.financial_cache import FinancialCache
-from predash.kis_probe import DemoPublicProbe, demo_keys as probe_demo_keys, run_probe as run_kis_probe
+import predash.kis_probe as kis_probe_module
+if getattr(kis_probe_module, 'REFERENCE_VERSION', 0) < 1:
+    kis_probe_module = importlib.reload(kis_probe_module)
+DemoPublicProbe = kis_probe_module.DemoPublicProbe
+probe_demo_keys, run_kis_probe = kis_probe_module.demo_keys, kis_probe_module.run_probe
+from predash.lynch_kis import collect_reference as collect_kis_reference, calculate_reference as calculate_kis_reference
 from predash.lynch import collect_lynch, analyse as analyse_lynch, cards_html as lynch_cards_html, BS as LYNCH_BS, SOURCE as LYNCH_SOURCE
 from predash.strategy_comparison import comparison_group, build_comparison, table_html
 
@@ -340,6 +345,52 @@ def kis_demo_financial_probe_panel():
         st.download_button('KIS 테스트 결과 내려받기',json.dumps(result,ensure_ascii=False,indent=2,allow_nan=False),file_name=f"kis-demo-financial-test-{result['code']}.json",mime='application/json',key='kis_probe_download')
 
 
+def kis_reference_client():
+    try:
+        stored=dict(st.secrets)
+    except (FileNotFoundError,KeyError):stored={}
+    for name in ('KIS_ENV','KIS_APP_KEY','KIS_APP_SECRET','KIS_DEMO_APP_KEY','KIS_DEMO_APP_SECRET'):
+        if name not in stored and os.getenv(name):stored[name]=os.getenv(name)
+    keys=probe_demo_keys(st.session_state.get('classroom_credentials',{}),stored)
+    if st.session_state.get('classroom_kis_disabled') or not all(keys.values()):
+        raise BrokerError('KIS 대체 조회에 사용할 모의 App Key·Secret 쌍이 필요합니다.')
+    client=st.session_state.get('_kis_demo_public_probe')
+    if not isinstance(client,DemoPublicProbe) or client.key!=keys['key'] or client.secret!=keys['secret']:
+        client=DemoPublicProbe(keys);st.session_state['_kis_demo_public_probe']=client
+    return client
+
+
+def kis_lynch_result(saved, today):
+    data,quote=saved['data'],saved['quote']
+    result=calculate_kis_reference(saved,today)
+    if saved.get('dart_error'):st.info('DART 조회 실패로 KIS 대체 경로 사용 · '+saved['dart_error'])
+    st.subheader(f"{data['name']} · {data['code']}")
+    st.warning('KIS 참고 계산 · EPS의 연결/별도·기본/희석·분할 조정 기준은 DART 원문과 미대조입니다. 전략 적합 판정은 하지 않습니다.')
+    st.caption(f"조회 {data['fetched_at']} · 가격 {quote.get('kind','미확인')} {quote.get('date','미확인')} · {quote.get('source','시세 출처 미확인')}")
+    st.html(lynch_cards_html(result))
+    st.subheader('01  이익 성장 · KIS EPS')
+    st.caption('확인된 결산월과 일치하며 종료된 기간만 사용합니다. 이후 분기·반기 자료를 연간 EPS에 섞지 않습니다.')
+    st.dataframe([{'연도':r['year'],'KIS EPS (원/주)':r['value'],'전년 대비':f"{r['growth']:+.2f}%" if r['growth'] is not None else '—','변화':r['note']} for r in result['history']],hide_index=True,use_container_width=True)
+    if saved['excluded_periods']:st.caption('계산 제외 기간: '+', '.join(saved['excluded_periods']))
+    for reason in result['growth_gaps']:st.info(reason)
+    st.caption('CAGR은 5개 양수 연간 EPS의 4년 성장률입니다. 린치의 20~25% 선호 범위는 참고값이며 고정 합격선이 아닙니다.')
+    st.subheader('02  성장 대비 가격 · KIS 참고값')
+    if quote.get('close') is not None:st.write(f"{quote.get('kind','가격')} **{quote['close']:,.0f}원** · {quote.get('date')}")
+    st.caption('PER = 표시 가격 ÷ 마지막 연간 KIS EPS | 과거 PEG = PER ÷ 4년 EPS CAGR(%)')
+    st.caption('종가를 확보하지 못하면 조회 시점 현재가를 사용하며 명시합니다. 당일 미완료 일봉을 종가로 사용하지 않습니다.')
+    if result['price_gap']:st.info(result['price_gap'])
+    if quote.get('closing_gap'):st.caption('이전 거래일 종가 조회 사유 · '+quote['closing_gap'])
+    st.subheader('03  재무 상태')
+    st.info('현금·차입금 미확인 · KIS EPS 응답에는 해당 세부 계정이 없습니다. DART 재무자료를 확보한 뒤 별도로 확인해야 합니다.')
+    with st.expander('출처 · 계산 설정 · 미확인 항목'):
+        st.write('출처: 한국투자증권 모의 API · 국내주식 재무비율(연간), 현재가 및 일별 시세')
+        st.link_button('한국투자증권 공식 재무비율 샘플','https://github.com/koreainvestment/open-trading-api/tree/main/examples_llm/domestic_stock/finance_financial_ratio')
+        st.caption('현재가 API의 결산월로 연간 기간을 필터링합니다. 회계연도 변경 이력은 미검증입니다. KIS 참고 계산값을 DART 검증 완료 값으로 표시하지 않습니다.')
+        for reason in data['data_gaps']:st.write('· '+reason)
+        st.caption('PER/성장률 참고점 0.5·1·2배. 사업 성장 지속성은 이번 범위에 포함하지 않습니다.')
+    st.download_button('KIS 점검 결과·근거 내려받기',json.dumps({'schema_version':1,'analysis':result,'evidence':saved},ensure_ascii=False,indent=2,allow_nan=False),file_name=f"lynch-kis-{data['code']}-{today}.json",mime='application/json',key='lynch_kis_export')
+
+
 def lynch_page():
     st.title('린치 고성장주 정량 점검')
     st.caption('이익 성장 · 성장 대비 가격 · 재무 상태 | 공개 재무자료와 종가로 확인하는 첫 점검')
@@ -354,25 +405,41 @@ def lynch_page():
     st.caption('계산 설정: 최근 5개 완료 사업연도 → 4년 CAGR · 연결 우선 · 가격은 최근 연간 기본 EPS 기준. 이 설정은 린치가 지정한 고정 공식이 아닙니다.')
     key = 'lynch_data_' + code
     today = datetime.now(ZoneInfo('Asia/Seoul')).date()
+    kis_direct = st.checkbox('KIS 성장·가격으로 바로 조회 · DART 대기 생략', value=False, key='lynch_kis_direct')
+    st.caption('기본 경로는 DART 우선·실패 시 KIS입니다. KIS 바로 조회는 성장·가격만 참고 계산하고 재무 상태는 미확인으로 남깁니다.')
     if st.button('최신 자료 조회·점검', type='primary', key='lynch_refresh'):
-        try:
-            if not api_key('DART_CRTFC_KEY'):
-                raise DataError('DART 연결 설정이 필요합니다.')
-            with st.spinner('DART 공식 재무자료와 종가를 조회합니다…'):
-                data = collect_lynch(official_client(), code, today)
-                quote = {}
+        if kis_direct:
+            try:
+                with st.spinner('KIS 연간 EPS와 가격을 조회합니다…'):
+                    st.session_state[key]=collect_kis_reference(kis_reference_client(),code,today,labels[code].rsplit(' · ',1)[0])
+                st.session_state.pop(key+'_error',None)
+            except (BrokerError,ValueError) as exc:st.session_state[key+'_error']=str(exc)
+        else:
+            try:
+                if not api_key('DART_CRTFC_KEY'):
+                    raise DataError('DART 연결 설정이 필요합니다.')
+                with st.spinner('DART 공식 재무자료와 종가를 조회합니다…'):
+                    data = collect_lynch(official_client(), code, today)
+                    quote = {}
+                    try:
+                        close, day, _, source = quote_with_fallback(code, official_client(), today)
+                        day = str(day)
+                        if re.fullmatch(r'\d{8}', day): day = f'{day[:4]}-{day[4:6]}-{day[6:]}'
+                        quote = {'close':close,'date':day,'source':source,
+                                 'fetched_at':datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds')}
+                    except (DataError, ValueError) as exc:
+                        quote = {'error':str(exc)}
+                    st.session_state[key] = {'data':data,'quote':quote}
+                    st.session_state.pop(key + '_error', None)
+            except (DataError, ValueError) as exc:
                 try:
-                    close, day, _, source = quote_with_fallback(code, official_client(), today)
-                    day = str(day)
-                    if re.fullmatch(r'\d{8}', day): day = f'{day[:4]}-{day[4:6]}-{day[6:]}'
-                    quote = {'close':close,'date':day,'source':source,
-                             'fetched_at':datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds')}
-                except (DataError, ValueError) as exc:
-                    quote = {'error':str(exc)}
-                st.session_state[key] = {'data':data,'quote':quote}
-                st.session_state.pop(key + '_error', None)
-        except (DataError, ValueError) as exc:
-            st.session_state[key + '_error'] = str(exc)
+                    with st.spinner('DART 실패 · KIS 대체 조회를 시도합니다…'):
+                        fallback=collect_kis_reference(kis_reference_client(),code,today,labels[code].rsplit(' · ',1)[0])
+                        fallback['dart_error']=str(exc)
+                        st.session_state[key]=fallback
+                        st.session_state.pop(key+'_error',None)
+                except (BrokerError,ValueError) as kis_exc:
+                    st.session_state[key+'_error']=str(exc)+' · KIS 대체 조회: '+str(kis_exc)
     saved = st.session_state.get(key)
     if st.session_state.get(key + '_error'):
         st.error('최근 조회 실패 · ' + st.session_state[key + '_error'])
@@ -385,6 +452,9 @@ def lynch_page():
     fetched = datetime.fromisoformat(data['fetched_at'])
     if (datetime.now(ZoneInfo('Asia/Seoul'))-fetched).total_seconds() > 86400:
         st.warning('조회 후 24시간이 지났습니다. 최신 자료 조회·점검을 눌러 갱신해 주세요.')
+        return
+    if saved.get('source') == 'KIS':
+        kis_lynch_result(saved,today)
         return
     result = analyse_lynch(data, quote, today.isoformat())
     st.subheader(f"{data['name']} · {code}")

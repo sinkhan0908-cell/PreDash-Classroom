@@ -6,8 +6,11 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from predash.kis import KIS, BrokerError
 
+REFERENCE_VERSION = 1
+
 PRICE = '/uapi/domestic-stock/v1/quotations/inquire-price'
 RATIOS = '/uapi/domestic-stock/v1/finance/financial-ratio'
+DAILY = '/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice'
 
 
 def demo_keys(session, secrets):
@@ -31,7 +34,7 @@ class DemoPublicProbe(KIS):
         self.expires=0
 
     def call(self, method, path, **kwargs):
-        if (method,path) not in {('POST','/oauth2/tokenP'),('GET',PRICE),('GET',RATIOS)}:
+        if (method,path) not in {('POST','/oauth2/tokenP'),('GET',PRICE),('GET',RATIOS),('GET',DAILY)}:
             raise BrokerError('이 테스트는 모의 환경의 공개 시세·재무 조회만 허용합니다.')
         return super().call(method,path,**kwargs)
 
@@ -76,7 +79,7 @@ def run_probe(client, code, pause=time.sleep):
                 returned=str(output.get('stck_shrn_iscd',''))
                 if returned and returned!=code:raise BrokerError('응답 종목코드 불일치')
                 item['success']=True
-                item['values']={key:numeric(output.get(key)) for key in ('stck_prpr','eps','per')}
+                item['values']={key:numeric(output.get(key)) for key in ('stck_prpr','eps','per','stac_month')}
                 item['reason']='API 성공 · EPS 대상 연도·회계 기준은 이 응답만으로 확정하지 않습니다.'
             else:
                 output=data.get('output')
@@ -89,6 +92,10 @@ def run_probe(client, code, pause=time.sleep):
                     if re.fullmatch(r'\d{4}(0[1-9]|1[0-2])',period) and period not in seen:
                         item['annual_eps'].append({'period':period,'eps':eps})
                         seen.add(period)
+                    elif period in seen:
+                        existing=next(r for r in item['annual_eps'] if r['period']==period)
+                        if existing['eps'] != eps:
+                            existing.update(eps=None, conflict=True)
                 item['annual_eps'].sort(key=lambda r:r['period'])
                 item['success']=True
                 item['more_pages']=str(response.headers.get('tr_cont','')).upper() in ('M','F')
