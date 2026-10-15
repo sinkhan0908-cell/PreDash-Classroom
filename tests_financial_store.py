@@ -77,7 +77,7 @@ class FinancialStoreTests(unittest.TestCase):
         st.query_params={};st.selectbox.return_value='005930';st.checkbox.return_value=True
         st.button.side_effect=[True,False]
         render=Mock();store=Mock()
-        ns=dict(st=st,datetime=datetime,ZoneInfo=ZoneInfo,clean_codes=lambda x:[c for c in x if c],lynch_restore_saved=Mock(),
+        ns=dict(lynch_freshness_panel=Mock(),st=st,datetime=datetime,ZoneInfo=ZoneInfo,clean_codes=lambda x:[c for c in x if c],lynch_restore_saved=Mock(),
                 collect_kis_reference=Mock(side_effect=BrokerError('timeout')),kis_reference_client=Mock(),lynch_save_remote=store,
                 DataError=DataError,BrokerError=BrokerError,kis_lynch_result=render)
         node=next(n for n in ast.parse(Path('app.py').read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='lynch_page')

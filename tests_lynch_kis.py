@@ -54,7 +54,7 @@ class KisReferenceTests(unittest.TestCase):
             st.selectbox.return_value='005930';st.checkbox.return_value=direct;st.button.return_value=True
             saved=build_reference(self.fixture(),datetime.now(ZoneInfo('Asia/Seoul')).date())
             dart=Mock(side_effect=DataError('기업개황 timeout'));fallback=Mock(return_value=saved);render=Mock()
-            ns=dict(check_financial_snapshot=Mock(),lynch_restore_saved=Mock(),lynch_save_remote=Mock(),st=st,clean_codes=lambda codes:[c for c in codes if c],datetime=datetime,ZoneInfo=ZoneInfo,
+            ns=dict(lynch_freshness_panel=Mock(),check_financial_snapshot=Mock(),lynch_restore_saved=Mock(),lynch_save_remote=Mock(),st=st,clean_codes=lambda codes:[c for c in codes if c],datetime=datetime,ZoneInfo=ZoneInfo,
                     api_key=lambda k:'configured',collect_lynch=dart,official_client=Mock(),
                     collect_kis_reference=fallback,kis_reference_client=Mock(),kis_lynch_result=render,
                     DataError=DataError,BrokerError=BrokerError,re=re)

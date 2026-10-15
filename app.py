@@ -34,7 +34,11 @@ strategy_checks = financial_validation_module.strategy_checks
 collection_status = financial_validation_module.collection_status
 export_validation = financial_validation_module.export_validation
 from predash.financial_cache import FinancialCache
-from predash.financial_store import select_snapshot as select_financial_snapshot, persist as persist_financial_snapshot, clean_snapshot as check_financial_snapshot
+import predash.financial_store as financial_store_module
+if getattr(financial_store_module, 'FRESHNESS_VERSION', 0) < 1:
+    financial_store_module = importlib.reload(financial_store_module)
+select_financial_snapshot, persist_financial_snapshot, check_financial_snapshot = financial_store_module.select_snapshot, financial_store_module.persist, financial_store_module.clean_snapshot
+from predash.financial_freshness import fingerprint as financial_fingerprint, due as financial_check_due, check_dart as check_dart_changes, check_kis as check_kis_changes
 from predash.cloud_store import CloudStore, StorageError, settings as cloud_settings, watch_from_payload as watch_from_cloud
 import predash.kis_probe as kis_probe_module
 if getattr(kis_probe_module, 'REFERENCE_VERSION', 0) < 1:
@@ -499,14 +503,14 @@ def lynch_restore_saved(code):
                 st.session_state[key+'_error']='최근 '+('가격' if last.get('kind')=='price' else '재무')+' 최신 확인 실패 · '+str(last.get('at'))
 
 
-def lynch_save_remote(code, saved=None, failed=False, kind='financial'):
+def lynch_save_remote(code, saved=None, failed=False, kind='financial', freshness=None, checked_source=None):
     try:
         client,_=cloud_client()
         if client is None:
             st.session_state['lynch_storage_note_'+code]='Supabase 미설정 · 이번 결과는 현재 접속 세션에만 유지됩니다.'
             return
         previous=st.session_state.get('_cloud_snapshot')
-        row=persist_financial_snapshot(client,code,saved,attempt_kind=kind,failed=failed)
+        row=persist_financial_snapshot(client,code,saved,attempt_kind=kind,failed=failed,**({'freshness':freshness,'checked_source':checked_source} if freshness is not None else {}))
         if not previous or previous['payload'].get('stocks')==row['payload'].get('stocks'):
             st.session_state['_cloud_snapshot']=row
         else:
@@ -538,6 +542,44 @@ def lynch_refresh_price(saved, today):
         quote={'close':close,'date':day,'source':source,'kind':'종가'}
     quote['fetched_at']=datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds')
     return {**saved,'quote':quote}
+
+
+def lynch_freshness_panel(code,saved,today):
+    st.subheader('새 재무자료 확인')
+    st.caption('저장본을 먼저 표시합니다. 화면을 이용할 때 6시간 간격으로 확인하며, 실패하면 15분 뒤 다시 시도합니다. 앱을 닫은 동안에는 실행하지 않습니다.')
+    source=saved.get('source','DART')
+    cache_key='lynch_freshness_'+code+'_'+source
+    record=st.session_state.get(cache_key) or saved.get('_storage',{}).get('freshness')
+    automatic=st.checkbox('새 자료 자동 확인',value=True,key='lynch_auto_'+code)
+    manual=st.button('지금 변경 확인',key='lynch_check_'+code)
+    at=datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds')
+    if manual or (automatic and financial_check_due(saved,record,at)):
+        changed=False
+        try:
+            with st.spinner(source+' 새 재무자료를 확인합니다…'):
+                if source=='KIS':
+                    changed,candidate=check_kis_changes(kis_reference_client(),saved,today)
+                else:
+                    changed=check_dart_changes(official_client(),saved,today)
+                    if changed:
+                        candidate={'data':collect_lynch(official_client(),code,today),'quote':saved.get('quote',{}),'source':'DART'}
+                if changed:
+                    candidate=check_financial_snapshot(candidate)
+                    st.session_state['lynch_data_'+code]=candidate
+                    st.session_state.pop('lynch_data_'+code+'_error',None)
+                    saved=candidate
+            record={'fingerprint':financial_fingerprint(saved),'checked_at':at,'status':'updated' if changed else 'unchanged'}
+            st.session_state[cache_key]=record
+            lynch_save_remote(code,saved if changed else None,kind='freshness',freshness=record,checked_source=source)
+            if changed:st.rerun()
+        except (StorageError,DataError,BrokerError,ValueError,TypeError,KeyError):
+            record={'fingerprint':financial_fingerprint(saved),'checked_at':at,'status':'failed'}
+            st.session_state[cache_key]=record
+            lynch_save_remote(code,failed=True,kind='freshness',freshness=record,checked_source=source)
+    if record and record.get('fingerprint')==financial_fingerprint(saved):
+        label={'unchanged':'확인 범위 내 변경 없음','updated':'변경 감지 · 새 자료 반영','failed':'최신 여부 확인 실패 · 이전 성공 자료 유지'}.get(record.get('status'),'확인 필요')
+        st.caption(label+' · 확인 시각 '+str(record.get('checked_at')))
+    st.caption('DART: 새 정기보고서·정정공시 접수번호 확인. KIS: 완료 결산연도 EPS 응답 비교이며 DART 원문 검증을 뜻하지 않습니다. 가격은 별도 새로 조회합니다.')
 
 
 def lynch_page():
@@ -625,14 +667,15 @@ def lynch_page():
     data, quote = saved['data'], saved['quote']
     fetched = datetime.fromisoformat(data['fetched_at'])
     if (datetime.now(ZoneInfo('Asia/Seoul'))-fetched).total_seconds() > 86400:
-        st.warning('24시간 이상 지난 재무자료 사용 · 최신 여부를 확인하지 못했습니다. 필요할 때 최신 자료 조회·점검을 눌러 주세요.')
+        st.warning('원자료 수집 후 24시간 경과 · 새 재무자료 확인 결과와 가격 기준일을 함께 확인해 주세요.')
     if quote.get('refresh_error'):st.warning(quote['refresh_error'])
     if saved.get('_storage',{}).get('restored'):
         st.info('Supabase 저장본에서 복원 · 원자료 수집 '+data['fetched_at'])
-    st.caption(st.session_state.get('lynch_storage_note_'+code,'저장 자료 우선 표시 · 외부 API를 자동으로 다시 호출하지 않습니다.'))
-    st.caption('자료가 없거나 바뀌었는지 자동 비교하는 기능은 다음 단계입니다. 이번 계산은 표시된 자료와 오늘의 평가 기준일을 사용합니다.')
+    st.caption(st.session_state.get('lynch_storage_note_'+code,'저장 자료 우선 표시 · 새 자료 확인은 아래에서 관리합니다.'))
+    st.caption('계산은 표시된 원자료와 평가 기준일을 사용합니다. 변경 확인 시각과 원자료 수집 시각은 구분합니다.')
     if saved.get('source') == 'KIS':
         kis_lynch_result(saved,today)
+        lynch_freshness_panel(code,saved,today)
         return
     result = analyse_lynch(data, quote, today.isoformat())
     st.subheader(f"{data['name']} · {code}")
@@ -682,6 +725,7 @@ def lynch_page():
         st.caption('원문 위치: One Up on Wall Street 13장 Some Famous Numbers, 15장 The Final Checklist의 Fast Growers 및 공통 항목. 계산 기간·양수 제한·종가 유효기간은 구현 설정입니다.')
         st.caption('실제 사업 확장의 지속성은 이번 범위에 포함하지 않습니다. API 자동 점검은 공시 전체의 수동 검증과 다릅니다.')
     st.download_button('점검 결과·근거 내려받기',json.dumps({'schema_version':1,'analysis':result,'financial':data},ensure_ascii=False,indent=2,allow_nan=False),file_name=f'lynch-{code}-{today}.json',mime='application/json',key='lynch_export')
+    lynch_freshness_panel(code,saved,today)
 
 
 def strategy_comparison_page():

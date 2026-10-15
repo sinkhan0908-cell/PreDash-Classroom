@@ -9,6 +9,7 @@ from predash.cloud_store import StorageError,StorageConflict
 
 FIELD='lynch_financial_snapshots'
 CACHE_VERSION=1
+FRESHNESS_VERSION=1
 CALCULATION_VERSION='lynch-4year-v1'
 FORBIDDEN={'key','secret','token','authorization','appkey','appsecret','access_token','cano','account','account_number','quantity','positions','credentials'}
 
@@ -71,13 +72,18 @@ def select_snapshot(payload,code):
     _,source,saved,stored_at=max(choices,key=lambda item:(item[0],item[1]=='DART'))
     attempts=entry.get('attempts',{})
     if not isinstance(attempts,dict):attempts={}
-    saved['_storage']={'restored':True,'stored_at':stored_at,'calculation_version':CALCULATION_VERSION,'last_attempt':next((a for a in attempts.values() if isinstance(a,dict) and a.get('status')=='failed'),entry.get('last_attempt'))}
+    saved['_storage']={'restored':True,'stored_at':stored_at,'calculation_version':CALCULATION_VERSION,'freshness':deepcopy(entry.get(source,{}).get('freshness')),'last_attempt':next((a for a in attempts.values() if isinstance(a,dict) and a.get('status')=='failed'),entry.get('last_attempt'))}
     return saved
 
 
-def persist(client,code,saved=None,attempt_kind='financial',failed=False):
+def persist(client,code,saved=None,attempt_kind='financial',failed=False,freshness=None,checked_source=None):
     cleaned=clean_snapshot(saved) if saved is not None else None
     if cleaned and cleaned['data']['code']!=code:raise StorageError('자료 종목코드 불일치')
+    if freshness is not None:
+        from predash.financial_freshness import fingerprint
+        if checked_source not in ('DART','KIS') or set(freshness)!={'fingerprint','checked_at','status'} or freshness['status'] not in ('unchanged','updated','failed'):
+            raise StorageError('최신 확인 기록 형식 오류')
+        timestamp(freshness['checked_at'])
     for _ in range(3):
         row=client.load()
         payload=deepcopy(row['payload'])
@@ -95,7 +101,17 @@ def persist(client,code,saved=None,attempt_kind='financial',failed=False):
                 except (KeyError,ValueError,TypeError):pass
             if old and not cleaned.get('quote',{}).get('close') and old.get('quote',{}).get('close'):
                 cleaned['quote']={**deepcopy(old['quote']),'refresh_error':'최근 가격 조회 실패 · 이전 가격과 원래 기준일 유지'}
+            previous_check=entry.get(source,{}).get('freshness') if old and old.get('data')==cleaned['data'] else None
             entry[source]={'snapshot':cleaned,'stored_at':now(),'calculation_version':CALCULATION_VERSION}
+            if previous_check:entry[source]['freshness']=deepcopy(previous_check)
+            if attempt_kind=='freshness':
+                entry.setdefault('attempts',{})['financial']={'at':now(),'kind':'financial','status':'success'}
+        if freshness is not None:
+            target=entry.get(checked_source,{})
+            if not target.get('snapshot') or fingerprint(target['snapshot'])!=freshness['fingerprint']:
+                raise StorageConflict('최신 확인 대상이 다른 기기에서 변경되었습니다. 최신 저장본을 보존합니다.')
+            prior=target.get('freshness')
+            if not prior or timestamp(prior['checked_at'])<=timestamp(freshness['checked_at']):target['freshness']=deepcopy(freshness)
         entry['last_attempt']={'at':now(),'kind':attempt_kind,'status':'failed' if failed else 'success'}
         entry.setdefault('attempts',{})[attempt_kind]=deepcopy(entry['last_attempt'])
         # Bound storage to latest 24 researched companies, retaining both providers per company.
