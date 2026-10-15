@@ -5,6 +5,7 @@ import html
 import zipfile
 import time
 import hashlib
+import logging
 from collections import OrderedDict
 from threading import RLock
 from datetime import date, timedelta
@@ -18,7 +19,33 @@ from predash.company_codes import KNOWN_COMPANIES, DIRECTORY_BOOTSTRAP_VERSION, 
 # Public directory only: never cache keys, accounts or financial responses here.
 _DIRECTORY_CACHE = None
 DIRECTORY_TTL_SECONDS = 24 * 60 * 60
-COMPANY_LOOKUP_VERSION = 2
+COMPANY_LOOKUP_VERSION = 3
+_NETWORK_LOG = logging.getLogger('predash.network')
+_NETWORK_LOG.setLevel(logging.INFO)
+_NETWORK_LOG.propagate = False
+if not _NETWORK_LOG.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter('%(asctime)s [PREDASH_NET] %(message)s'))
+    _NETWORK_LOG.addHandler(_handler)
+
+
+def failure_phase(exc):
+    names = {type(exc).__name__}
+    # Inspect exception TYPES only: request URLs and exception messages may contain keys.
+    seen, pending = set(), [exc]
+    while pending and len(seen) < 20:
+        item = pending.pop()
+        if id(item) in seen:
+            continue
+        seen.add(id(item))
+        names.add(type(item).__name__)
+        pending.extend(v for v in (getattr(item, '__cause__', None), getattr(item, '__context__', None), *getattr(item, 'args', ())) if isinstance(v, BaseException))
+    if names & {'NameResolutionError', 'gaierror'}: return 'DNS_FAILURE'
+    if 'ConnectTimeout' in names: return 'CONNECT_TIMEOUT'
+    if 'ReadTimeout' in names or 'ReadTimeoutError' in names: return 'READ_TIMEOUT'
+    if 'SSLError' in names: return 'TLS_FAILURE'
+    return 'NETWORK_FAILURE'
+
 _COMPANY_CACHE = OrderedDict()
 _COMPANY_LOCK = RLock()
 COMPANY_TTL_SECONDS = 24 * 60 * 60
@@ -68,8 +95,11 @@ def get(url, params):
               "company.json": "DART 기업개황", "company.xml": "DART 기업개황(XML)", "fnlttSinglAcntAll.json": "DART 결산 실적", "list.json": "DART 공시 목록"}
     label = labels.get(path.rsplit("/",1)[-1], "공공데이터포털 주식시세")
     for attempt in range(2):
+        started = time.monotonic()
+        _NETWORK_LOG.info('service=%s attempt=%d event=start', label, attempt + 1)
         try:
             r = requests.get(url, params=params, timeout=(10,60) if path.endswith(("corpCode.xml","document.xml")) else (10,30))
+            _NETWORK_LOG.info('service=%s attempt=%d event=response http=%d elapsed_s=%.2f', label, attempt + 1, r.status_code, time.monotonic() - started)
             if r.status_code in (502,503,504) and attempt == 0:
                 continue
             status = r.status_code
@@ -99,17 +129,23 @@ def get(url, params):
                 except ElementTree.ParseError:
                     pass
             return r
-        except requests.Timeout:
+        except requests.Timeout as exc:
+            phase = failure_phase(exc)
+            _NETWORK_LOG.warning('service=%s attempt=%d event=failed phase=%s elapsed_s=%.2f', label, attempt + 1, phase, time.monotonic() - started)
             if attempt == 0:
                 continue
-            raise DataError(label+": 응답 시간이 초과됐습니다. 한 차례 재시도했으며, 키 오류로 확정할 수 없습니다.") from None
+            raise DataError(label+": 응답 시간이 초과됐습니다. 한 차례 재시도했으며, 키 오류로 확정할 수 없습니다. [" + phase + "]") from None
         except requests.exceptions.SSLError:
+            _NETWORK_LOG.warning('service=%s attempt=%d event=failed phase=TLS_FAILURE elapsed_s=%.2f', label, attempt + 1, time.monotonic() - started)
             raise DataError(label+": 보안 연결(TLS)에 실패했습니다. 서버 연결 환경을 확인하세요.") from None
-        except requests.ConnectionError:
+        except requests.ConnectionError as exc:
+            phase = failure_phase(exc)
+            _NETWORK_LOG.warning('service=%s attempt=%d event=failed phase=%s elapsed_s=%.2f', label, attempt + 1, phase, time.monotonic() - started)
             if attempt == 0:
                 continue
             raise DataError(label+": 서버에 연결하지 못했습니다. 네트워크·DNS·제공 서버 상태를 확인하세요.") from None
         except requests.RequestException:
+            _NETWORK_LOG.warning('service=%s attempt=%d event=failed phase=REQUEST_FAILURE elapsed_s=%.2f', label, attempt + 1, time.monotonic() - started)
             raise DataError(label+": 요청 전송에 실패했습니다. 서버 연결 환경을 확인하세요.") from None
 
 
@@ -160,6 +196,9 @@ class Official:
                     raise DataError('DART 기업개황: JSON 조회 실패 후 XML 응답도 읽지 못했습니다.') from None
         except ValueError:
             raise DataError("DART 응답 형식 오류") from None
+        if payload.get("status") != "000":
+            safe_status = str(payload.get('status'))
+            _NETWORK_LOG.warning('service=DART event=api_status code=%s', safe_status if re.fullmatch(r'\d{3}', safe_status) else 'UNKNOWN')
         if payload.get("status") == "013":
             return None
         if payload.get("status") != "000":

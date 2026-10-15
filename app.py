@@ -21,7 +21,7 @@ from predash.macro import fetch_vix,relative,benchmark,MacroError
 from predash.analysis import review
 from predash.health import status as holding_status
 import predash.official as official_module
-if not hasattr(official_module, 'COMPANY_LOOKUP_VERSION'):
+if getattr(official_module, 'COMPANY_LOOKUP_VERSION', 0) < 3:
     official_module = importlib.reload(official_module)
 Official, DataError = official_module.Official, official_module.DataError
 import predash.financial_validation as financial_validation_module
