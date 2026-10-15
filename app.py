@@ -1,5 +1,6 @@
 """PreDash foundation: purchaser-owned, read-only account review."""
 import hmac
+import hashlib
 import html
 import json
 import os
@@ -32,6 +33,7 @@ strategy_checks = financial_validation_module.strategy_checks
 collection_status = financial_validation_module.collection_status
 export_validation = financial_validation_module.export_validation
 from predash.financial_cache import FinancialCache
+from predash.cloud_store import CloudStore, StorageError, settings as cloud_settings, watch_from_payload as watch_from_cloud
 import predash.kis_probe as kis_probe_module
 if getattr(kis_probe_module, 'REFERENCE_VERSION', 0) < 1:
     kis_probe_module = importlib.reload(kis_probe_module)
@@ -296,6 +298,97 @@ def financial_validation_panel(code, context, market_item=None):
                            json.dumps(export_validation(data, checks), ensure_ascii=False, indent=2, allow_nan=False),
                            file_name=f'financial-validation-{code}-{data["asof"]}.json',
                            mime='application/json', key=context + '_validation_download_' + code)
+
+
+def cloud_client():
+    values={}
+    for name in ('SUPABASE_URL','SUPABASE_SECRET_KEY','SUPABASE_SERVICE_ROLE_KEY'):
+        try:values[name]=str(st.secrets.get(name,os.getenv(name,'')))
+        except (FileNotFoundError,KeyError):values[name]=os.getenv(name,'')
+    url,key=cloud_settings(values)
+    if not url and not key:return None,None
+    if not password or not st.session_state.get('authorized'):
+        raise StorageError('클라우드 저장은 APP_PASSWORD 설정 후 로그인한 상태에서 사용합니다.')
+    if not url or not key:raise StorageError('SUPABASE_URL과 서버용 Supabase 키를 함께 설정하세요.')
+    return CloudStore(url,key),hashlib.sha256((url+'|'+key).encode()).hexdigest()
+
+
+def cloud_apply(snapshot, force=False):
+    codes,names=watch_from_cloud(snapshot['payload'])
+    local=clean_codes(st.session_state.get('watch_codes',[])+st.query_params.get('watch','').split(','))
+    st.session_state['_cloud_snapshot']=snapshot
+    st.session_state['_cloud_error']=None
+    st.session_state['_cloud_dirty']=False
+    if codes or not local or force:
+        st.session_state['watch_codes']=codes
+        st.session_state['watch_names']=names
+        st.query_params['watch']=','.join(codes)
+        st.session_state['watch_results']={}
+        for key in ('comparison_codes','lynch_company','comparison_option_labels','lynch_option_labels'):
+            st.session_state.pop(key,None)
+    else:
+        st.session_state['_cloud_dirty']=True
+    st.session_state['_cloud_checked']=datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds')
+
+
+def cloud_bootstrap():
+    try:
+        client,fingerprint=cloud_client()
+        if client is None:return
+        if st.session_state.get('_cloud_identity')!=fingerprint:
+            for key in ('_cloud_snapshot','_cloud_error','_cloud_checked'):
+                st.session_state.pop(key,None)
+            st.session_state['_cloud_identity']=fingerprint
+            cloud_apply(client.load())
+    except StorageError as exc:
+        st.session_state['_cloud_error']=str(exc)
+
+
+def cloud_save_current(codes,names):
+    try:
+        client,_=cloud_client()
+        if client is None:return
+        snapshot=st.session_state.get('_cloud_snapshot')
+        if not snapshot:raise StorageError('먼저 데이터 연결에서 클라우드 불러오기에 성공해야 저장할 수 있습니다.')
+        saved=client.save_watch(snapshot,codes,names)
+        st.session_state['_cloud_snapshot']=saved
+        st.session_state['_cloud_dirty']=False
+        st.session_state['_cloud_error']=None
+        st.session_state['_cloud_checked']=datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds')
+    except StorageError as exc:
+        st.session_state['_cloud_dirty']=True
+        st.session_state['_cloud_error']=str(exc)
+
+
+def cloud_storage_panel():
+    st.subheader('Supabase · 관심종목 저장')
+    st.caption('한 개인용 대시보드의 관심종목을 기기 간 공유합니다. 투자일지·분석 결과의 자동 저장은 이번 단계에 포함하지 않습니다.')
+    try:
+        client,fingerprint=cloud_client()
+        if client is None:
+            st.info('Supabase 미설정 · 현재 목록은 세션·주소·백업 파일로만 유지됩니다.')
+        else:
+            if st.button('클라우드 연결 확인 · 목록 다시 불러오기',key='cloud_reload'):
+                try:
+                    cloud_apply(client.load(),force=True)
+                    st.success('personal 행을 읽고 관심종목을 불러왔습니다.')
+                except StorageError as exc:st.session_state['_cloud_error']=str(exc)
+            st.caption('다시 불러오기는 현재 화면 목록을 클라우드 목록으로 바꿉니다. 저장하지 않은 목록은 먼저 백업하세요.')
+            if st.button('현재 관심종목을 클라우드에 저장',key='cloud_save',disabled=not st.session_state.get('_cloud_snapshot')):
+                codes=clean_codes(st.session_state.get('watch_codes',[])+st.query_params.get('watch','').split(','))
+                cloud_save_current(codes,st.session_state.get('watch_names',{}))
+                if not st.session_state.get('_cloud_error'):st.success('서버 저장 응답 확인 완료')
+            snapshot=st.session_state.get('_cloud_snapshot')
+            if snapshot:
+                st.caption(f"읽기 확인됨 · 저장 버전 {snapshot['version']} · 마지막 확인 {st.session_state.get('_cloud_checked','미확인')}")
+                if st.session_state.get('_cloud_dirty'):st.warning('현재 목록에 클라우드 저장이 확인되지 않은 변경이 있습니다.')
+            if st.session_state.get('_cloud_error'):st.error(st.session_state['_cloud_error'])
+    except StorageError as exc:st.warning(str(exc))
+    with st.expander('Supabase 준비 · Secrets 입력 방법'):
+        st.link_button('현재 저장소 schema.sql','https://github.com/sinkhan0908-cell/PreDash-Classroom/blob/main/predash/schema.sql')
+        st.write('SQL Editor에서 실행하고 stock_dash_state 테이블의 personal 행을 확인하세요.')
+        st.code('SUPABASE_URL = "https://내프로젝트.supabase.co"\nSUPABASE_SECRET_KEY = "서버용 Secret key"',language='toml')
+        st.caption('기존 교재의 SUPABASE_SERVICE_ROLE_KEY도 지원합니다. 두 키 중 하나만 설정하면 됩니다. 키는 Streamlit Secrets에만 넣고 채팅·GitHub에는 올리지 마세요.')
 
 
 def kis_demo_financial_probe_panel():
@@ -793,6 +886,8 @@ if password and not st.session_state.get('authorized'):
             st.error('비밀번호를 확인하세요.')
     st.stop()
 
+cloud_bootstrap()
+
 def open_research(code):
     st.session_state.navigation='투자 근거'
     st.session_state.decision_pick=code
@@ -821,6 +916,11 @@ if large_text:
     st.html('<style>.stApp p,.stApp li{font-size:20px}.pd-watch small,.pd-card-sub,.pd-card-note,.pd-card-body small,.pd-holding-head small{font-size:18px}.pd-v-table,.pd-v-empty,.pd-v-notice,.pd-v-company{font-size:18px}.pd-v-note,.pd-v-legend,.pd-v-table small,.pd-v-notice small,.pd-v-company small{font-size:16px}</style>')
 mode_label='모의투자' if page=='모의투자' else ('매매 연습' if page=='매매 연습' else '실전 조회' if account_settings()['mode']=='real' else '개인 분석')
 st.html(f"<div class='pd-toolbar'><span class='pd-toolbar-title'>PreDash / {html.escape(page)}</span><div class='pd-badges'><span class='pd-badge'>{html.escape(mode_label)}</span><span class='pd-badge gold'>조회 전용</span><span class='pd-badge'>UI 2.8</span></div></div>")
+
+if st.session_state.get('_cloud_error'):
+    st.warning('클라우드 저장 확인 필요 · '+st.session_state['_cloud_error'])
+elif st.session_state.get('_cloud_snapshot'):
+    st.caption('Supabase 관심종목 연결됨 · '+('미저장 변경 있음' if st.session_state.get('_cloud_dirty') else '최근 읽기·저장 확인됨'))
 
 @st.cache_data(ttl=1800,show_spinner=False)
 def cached_vix(day):return fetch_vix(day)
@@ -1080,6 +1180,7 @@ elif page=='관심종목':
         st.query_params['watch']=','.join(st.session_state.watch_codes)
         st.session_state.watch_results={c:v for c,v in st.session_state.get('watch_results',{}).items() if c in st.session_state.watch_codes}
         st.session_state.watch_names=clean_names(st.session_state.get('watch_names',{}),st.session_state.watch_codes)
+        cloud_save_current(st.session_state.watch_codes,st.session_state.watch_names)
     with st.expander('종목 추가 · 백업 / 복원',expanded=not codes):
         with st.form('watch_lookup'):
             query=st.text_input('종목명 또는 종목코드',placeholder='예: 삼성전자 또는 005930',max_chars=40)
@@ -1346,6 +1447,8 @@ elif page=='연결 설정':
     kis_connected=all(account_settings()[k] for k in ('key','secret','cano','product'))
     st.html(f"<div class='pd-summary'><div><span>공공 API</span><strong>{connected}/4</strong><small>필요한 항목만 연결</small></div><div><span>증권사 KIS</span><strong>{'연결됨' if kis_connected and st.session_state.get('classroom_credentials') else '설정됨' if kis_connected else '미연결'}</strong><small>화면 입력 또는 Secrets</small></div><div><span>저장 방식</span><strong>화면·Secrets</strong><small>화면 입력은 로그아웃 시 삭제</small></div></div>")
 
+    cloud_storage_panel()
+    st.divider()
     st.subheader('01 · 공공 데이터 API')
     st.caption('수강 중에는 아래에서 바로 입력할 수 있습니다. 장기 사용은 본인 Streamlit Secrets에 저장하면 매번 다시 입력할 필요가 없습니다.')
 
