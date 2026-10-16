@@ -2,7 +2,7 @@
 
 ## 범위
 
-03 전략 비교 → 린치 고성장주 정량 점검의 입력자료를 저장합니다. 관심종목 저장은 계속 유지됩니다. 기존 stock_dash_state.personal.payload에 lynch_financial_snapshots 필드를 추가하므로 새 SQL·테이블·키 설정은 없습니다.
+03 투자 전략 → 린치 고성장주 정량 점검의 입력자료를 저장합니다. 관심종목 저장은 계속 유지됩니다. 기존 stock_dash_state.personal.payload에 lynch_financial_snapshots 필드를 추가하므로 새 SQL·테이블·키 설정은 없습니다.
 
 - 종목·출처(DART/KIS)별 최신 성공 입력자료, 원래 수집 시각·대상 기간·출처·검증 한계를 보존합니다.
 - 조회 성공 후 연속 5개 연간 숫자 EPS와 JSON 형식을 확인하고 자동 저장합니다. 0·적자 EPS도 사실 자료로 저장하며 CAGR 가능 여부는 별도 계산합니다.
@@ -22,7 +22,7 @@
 
 ## 사용자 검증
 
-1. 03 전략 비교에서 종목을 한 번 조회합니다. DART 실패가 잦으면 고급 설정의 KIS 직접 조회 옵션을 사용합니다.
+1. 03 투자 전략에서 종목을 한 번 조회합니다. DART 실패가 잦으면 고급 설정의 KIS 직접 조회 옵션을 사용합니다.
 2. 분석 근거 보기에서 "Supabase 재무자료 저장 응답 확인됨" 문구를 확인합니다.
 3. Supabase Table Editor → personal.payload.lynch_financial_snapshots.items에서 종목코드와 DART/KIS 하위 항목을 확인합니다.
 4. Edge의 기본 앱 주소로 로그인하고 같은 종목의 린치 화면을 엽니다. 조회 버튼 없이 상단의 저장 자료 사용 상태와 원래 수집일이 보여야 합니다. 상세 시각은 분석 근거에서 확인합니다.

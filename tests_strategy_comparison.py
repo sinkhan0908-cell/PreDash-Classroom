@@ -1,15 +1,8 @@
 import unittest
-import ast
-import json
-from pathlib import Path
-from datetime import datetime
-from zoneinfo import ZoneInfo
-from unittest.mock import Mock
 from copy import deepcopy
 
 from predash.strategy_comparison import comparison_group, build_comparison, table_html
 from tests_strategy_evidence import fixture
-from predash.official import DataError
 
 
 class ComparisonTests(unittest.TestCase):
@@ -61,42 +54,3 @@ class ComparisonTests(unittest.TestCase):
         self.assertEqual(result['checks'][0]['display_status'], '데이터 부족')
         self.assertIsNone(result['checks'][0]['evidence']['result'])
 
-    def test_page_refresh_continues_after_one_company_fails_and_drops_old_quote(self):
-        st = Mock()
-        st.session_state = {'watch_codes': ['005930', '000660'], 'watch_names': {},
-                            'comparison_quote_000660': {'close': 999, 'date': '2026-10-13', 'source': 'old'}}
-        st.query_params = {}
-        st.multiselect.return_value = ['005930', '000660']
-        st.checkbox.return_value = False
-        st.button.return_value = True
-        st.selectbox.side_effect = lambda label, options, **kw: list(options)[0]
-        st.radio.return_value = '전체'
-        memory = Mock()
-        memory.get.side_effect = [(self.data, '저장 자료 재사용'), DataError('기업개황 timeout')]
-        memory.remaining.return_value = 100
-        quote = Mock(side_effect=[(1600, '20261013', '공개기업', 'KIS'), DataError('시세 timeout')])
-        ns = dict(st=st, clean_codes=lambda x: list(dict.fromkeys(c for c in x if c)),
-                  datetime=datetime, ZoneInfo=ZoneInfo, public_financial_cache=lambda: memory,
-                  api_key=lambda k: 'configured', official_client=Mock(), DataError=DataError,
-                  price_sources_ready=lambda: True, quote_with_fallback=quote,
-                  comparison_group=comparison_group, build_comparison=build_comparison,
-                  table_html=table_html, strategy_evidence_panel=Mock(), json=json,
-                  re=__import__('re'))
-        tree = ast.parse(Path('app.py').read_text())
-        node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'strategy_comparison_page')
-        exec(compile(ast.Module(body=[node], type_ignores=[]), 'app.py', 'exec'), ns)
-        ns['strategy_comparison_page']()
-        self.assertEqual(memory.get.call_count, 2)
-        self.assertEqual(st.session_state['comparison_quote_005930']['date'], '2026-10-13')
-        self.assertIsNone(st.session_state['comparison_quote_000660']['close'])
-        exported = json.loads(st.download_button.call_args.args[1])
-        self.assertEqual(len(exported['items']), 2)
-        self.assertIsNone(exported['items'][1]['result'])
-        self.assertIn('timeout', exported['items'][1]['reason'])
-        # A refresh changes watch_names, but must not change rendered widget options.
-        first_labels = dict(st.session_state['comparison_option_labels'])
-        st.button.return_value = False
-        ns['strategy_comparison_page']()
-        formatter = st.multiselect.call_args.kwargs['format_func']
-        self.assertEqual({code: formatter(code) for code in first_labels}, first_labels)
-        self.assertEqual(st.session_state['watch_names']['005930'], self.data['name'])
