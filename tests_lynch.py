@@ -78,7 +78,7 @@ class LynchTests(unittest.TestCase):
         st.session_state={'watch_codes':['005930'],'watch_names':{},'lynch_data_005930':{'data':self.data,'quote':self.quote}}
         st.columns.return_value=[MagicMock(),MagicMock()];st.query_params={}
         st.selectbox.return_value='005930';st.button.return_value=False
-        ns=dict(LYNCH_PAGE_STYLE='',lynch_freshness_panel=MagicMock(),lynch_restore_saved=MagicMock(),lynch_save_remote=MagicMock(),st=st,datetime=datetime,ZoneInfo=ZoneInfo,clean_codes=lambda codes:[c for c in codes if c],re=re,json=json,
+        ns=dict(lynch_ttm_refresh=MagicMock(return_value=False),LYNCH_PAGE_STYLE='',lynch_freshness_panel=MagicMock(),lynch_restore_saved=MagicMock(),lynch_save_remote=MagicMock(),st=st,datetime=datetime,ZoneInfo=ZoneInfo,clean_codes=lambda codes:[c for c in codes if c],re=re,json=json,
                 analyse_lynch=analyse,lynch_cards_html=cards_html,LYNCH_BS=BS,LYNCH_SOURCE=SOURCE)
         from predash.lynch_view import metrics,table,number
         from predash.financial_freshness import fingerprint

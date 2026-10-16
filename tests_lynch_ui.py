@@ -28,7 +28,7 @@ class CompactLynchTests(unittest.TestCase):
         self.saved['data'].update(name='예시기업',fetched_at='2026-10-15T12:00:00+09:00')
         self.st=MagicMock();self.st.session_state={'lynch_data_005930':deepcopy(self.saved),'watch_codes':['005930'],'watch_names':{}}
     def updater(self):
-        return functions(['lynch_update_saved'],dict(st=self.st,lynch_freshness_panel=Mock(),lynch_refresh_price=Mock(),lynch_save_remote=Mock(),BrokerError=BrokerError,DataError=DataError))
+        return functions(['lynch_update_saved'],dict(lynch_ttm_refresh=Mock(return_value=False),st=self.st,lynch_freshness_panel=Mock(),lynch_refresh_price=Mock(),lynch_save_remote=Mock(),BrokerError=BrokerError,DataError=DataError))
     def test_single_action_checks_financials_and_refreshes_price_without_full_collection(self):
         ns=self.updater();ns['lynch_refresh_price'].return_value={**self.saved,'quote':{'close':1700,'date':'2026-10-16'}}
         ns['lynch_update_saved']('005930',date(2026,10,16))
@@ -54,7 +54,7 @@ class CompactLynchTests(unittest.TestCase):
     def test_page_has_one_action_uses_cache_and_does_not_check_twice(self):
         self.st.columns.return_value=[MagicMock(),MagicMock()];self.st.query_params={}
         self.st.selectbox.return_value='005930';self.st.button.return_value=True
-        ns=functions(['lynch_page'],dict(st=self.st,LYNCH_PAGE_STYLE=PAGE_STYLE,clean_codes=lambda c:[x for x in c if x],datetime=datetime,ZoneInfo=ZoneInfo,
+        ns=functions(['lynch_page'],dict(lynch_ttm_refresh=Mock(return_value=False),st=self.st,LYNCH_PAGE_STYLE=PAGE_STYLE,clean_codes=lambda c:[x for x in c if x],datetime=datetime,ZoneInfo=ZoneInfo,
             lynch_restore_saved=Mock(),lynch_update_saved=Mock(),lynch_status=Mock(),lynch_results=Mock(),lynch_freshness_panel=Mock()))
         ns['lynch_page']()
         self.st.button.assert_called_once();self.assertEqual(self.st.button.call_args.args[0],'최신 자료 확인')

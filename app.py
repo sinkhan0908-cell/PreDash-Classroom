@@ -35,10 +35,14 @@ collection_status = financial_validation_module.collection_status
 export_validation = financial_validation_module.export_validation
 from predash.financial_cache import FinancialCache
 import predash.financial_store as financial_store_module
-if getattr(financial_store_module, 'FRESHNESS_VERSION', 0) < 1:
+if getattr(financial_store_module, 'FRESHNESS_VERSION', 0) < 1 or getattr(financial_store_module, 'TTM_STORE_VERSION', 0) < 1:
     financial_store_module = importlib.reload(financial_store_module)
 select_financial_snapshot, persist_financial_snapshot, check_financial_snapshot = financial_store_module.select_snapshot, financial_store_module.persist, financial_store_module.clean_snapshot
-from predash.valuation_evidence import describe as describe_lynch_valuation
+from predash.ttm import collect as collect_ttm, calculate as calculate_ttm, due as ttm_due, TtmError
+import predash.valuation_evidence as valuation_evidence_module
+if getattr(valuation_evidence_module,'VALUATION_VERSION',0)<2:
+    valuation_evidence_module=importlib.reload(valuation_evidence_module)
+describe_lynch_valuation=valuation_evidence_module.describe
 from predash.lynch_view import PAGE_STYLE as LYNCH_PAGE_STYLE, metrics as lynch_metrics, table as lynch_table, status as lynch_status_html, number as lynch_number
 from predash.financial_freshness import fingerprint as financial_fingerprint, due as financial_check_due, check_dart as check_dart_changes, check_kis as check_kis_changes
 from predash.cloud_store import CloudStore, StorageError, settings as cloud_settings, watch_from_payload as watch_from_cloud
@@ -473,7 +477,7 @@ def lynch_options(code,saved=None,result=None,today=None):
         st.caption('설정을 바꾼 뒤 위의 최신 자료 확인을 누르세요. 기본은 DART 우선·실패 시 KIS입니다. 저장본이 있으면 같은 출처의 변경을 비교하며, 전체 다시 수집을 켜면 조회 경로를 새로 적용합니다.')
         st.caption('자동 확인은 화면 이용 중 6시간 간격, 실패 시 15분 뒤 재시도합니다. 앱을 닫은 동안에는 실행하지 않습니다.')
         if saved and result:
-            payload={'schema_version':1,'analysis':result,'financial':saved['data'],'evidence':saved}
+            payload={'schema_version':2,'analysis':result,'financial':saved['data'],'evidence':saved}
             st.download_button('결과·근거 내려받기',json.dumps(payload,ensure_ascii=False,indent=2,allow_nan=False),file_name=f'lynch-{code}-{today}.json',mime='application/json',key='lynch_export')
 
 
@@ -491,10 +495,15 @@ def lynch_results(saved,today):
     if result['growth_gaps']:st.caption('성장률 일부 계산 보류 · 사유는 분석 근거에서 확인하세요.')
     st.subheader('02  성장 대비 가격')
     suffix=' · 참고' if is_kis or crosscheck['status']=='numeric_mismatch' else ''
-    st.html(lynch_metrics([(quote.get('kind','종가'),lynch_number(quote.get('close'),'원',0)),(valuation['per_label']+suffix,lynch_number(result['per'],'배')),(valuation['peg_label']+suffix,lynch_number(result['peg'],'배',2))]))
-    st.caption(f"분모: {valuation['eps_year']}년 EPS {lynch_number(valuation['eps_value'],'원',2)} · 최근 12개월(TTM)·예상 PER과 구분")
+    st.html(lynch_metrics([('최근 12개월 PER · 공시 재구성',lynch_number(result['ttm']['per'],'배',2)),(valuation['annual_per_label']+suffix,lynch_number(result['annual_per'],'배')),(quote.get('kind','종가'),lynch_number(quote.get('close'),'원',0)),(valuation['peg_label']+suffix,lynch_number(result['annual_peg'],'배',2))]))
+    if result['ttm']['period_end']:
+        st.caption(f"TTM 기간: {result['ttm']['period_start']} ~ {result['ttm']['period_end']} · 공시 순이익·주식수로 재구성한 참고 계산")
+    if result['ttm']['per'] is None:
+        st.caption('최근 12개월 PER 미확인 · '+result['ttm']['data_gaps'][0])
+    if saved.get('ttm',{}).get('last_error'):st.warning('최근 TTM 조회 실패 · 이전 성공 원자료로 계산합니다.')
+    st.caption(f"분모: {valuation['annual_eps_year']}년 EPS {lynch_number(valuation['annual_eps_value'],'원',2)} · 최근 12개월(TTM)·예상 PER과 구분")
     if crosscheck['status']=='numeric_mismatch':
-        st.warning('EPS 공시 수치 불일치 · PER·PEG·성장률은 참고값입니다. 분석 근거에서 대조값과 출처를 확인하세요.')
+        st.warning('EPS 공시 수치 불일치 · 연간 PER·PEG·성장률은 참고값입니다. 분석 근거에서 대조값과 출처를 확인하세요.')
     if result['price_gap'] or quote.get('error'):st.caption('가격 지표 일부 미확인 · 분석 근거에서 기준일과 사유를 확인하세요.')
     st.subheader('03  재무 상태')
     balances=data.get('lynch',{}).get('balances',[])
@@ -516,9 +525,16 @@ def lynch_results(saved,today):
         st.caption('최근 5개 완료 사업연도 → 4년 CAGR. CAGR = [(마지막 EPS ÷ 처음 EPS)^(1/4) − 1] × 100. 양수 EPS·연속성·비교 가능성을 확인합니다. 계산 기간과 제한은 구현 설정입니다.')
         st.write('원문 대조: '+result['verification']['filing_crosscheck'])
         st.caption('API 조회 성공·변경 없음은 제공처 응답 확인이며 공시 원문 검증 완료를 뜻하지 않습니다. 원문 대조는 아래 확인일에 한정합니다.')
-        st.write(f"PER 분모: {valuation['eps_year']}년 EPS {valuation['eps_value']}원 · {valuation['eps_definition']}")
-        st.write(f"PEG: {valuation['per_label']} ÷ {valuation['growth_start_year']}~{valuation['growth_end_year']}년 EPS CAGR(%)")
-        st.caption('최근 12개월 PER: 미산출 · '+valuation['ttm_gap'])
+        st.write(f"PER 분모: {valuation['annual_eps_year']}년 EPS {valuation['annual_eps_value']}원 · {valuation['annual_eps_definition']}")
+        st.write(f"PEG: {valuation['annual_per_label']} ÷ {valuation['growth_start_year']}~{valuation['growth_end_year']}년 EPS CAGR(%)")
+        st.write('최근 12개월 PER: '+lynch_number(result['ttm']['per'],'배',2))
+        st.caption('TTM 순이익 = 전년 연간 보통주 순이익 + 당기 누적 − 전년 동기 누적. 주식수는 같은 기간의 가중평균 주식수 × 일수를 더하고 빼서 12개월 일수로 나눕니다. EPS 단순 합산·예상치·반기 두 배 환산을 사용하지 않습니다.')
+        st.caption('공시 EPS 주석의 금액·주식수가 반올림되어 있어 재구성 참고값입니다. 보고서 작성일은 실제 최초 공개 시각과 다를 수 있으며 과거 시점 투자 검증용으로 사용하지 않습니다.')
+        if result['ttm']['source_inputs']:
+            st.dataframe([{'기간':r.get('period_start','')+' ~ '+r.get('period_end',''),'보통주 순이익 (원)':r.get('profit'),'가중평균 주식수 (주)':r.get('weighted_shares'),'공시 기본 EPS':r.get('reported_eps'),'회계 기준':r.get('basis'),'보고서 작성·접수일':r.get('available_on'),'출처':r.get('source'),'원문 위치':r.get('source_location')} for r in result['ttm']['source_inputs']],hide_index=True,use_container_width=True)
+            for url in dict.fromkeys(r['source'] for r in result['ttm']['source_inputs']):st.link_button('TTM 공시 원문',url)
+            st.write('TTM 원자료 수집: '+str(result['ttm']['financial_fetched_at']))
+        for reason in result['ttm']['data_gaps']:st.caption(reason)
         if crosscheck['comparisons']:
             st.dataframe([{'연도':r['year'],'API EPS':r['provider_eps'],'공시 기본 EPS':r['reference_eps'],'차이 (원/주)':r['difference'],'판정':'수치 불일치' if r['status']=='numeric_mismatch' else '수치 일치 · 정의 별도 확인','원문 확인일':r['checked_on'],'원문 위치':r['source_location'],'출처':r['source']} for r in crosscheck['comparisons']],hide_index=True,use_container_width=True)
             for url in dict.fromkeys(r['source'] for r in crosscheck['comparisons']):st.link_button('EPS 대조 원문',url)
@@ -558,7 +574,7 @@ def lynch_restore_saved(code):
         if restored:
             st.session_state[key]=restored
             last=restored['_storage'].get('last_attempt') or {}
-            if last.get('status')=='failed':
+            if last.get('status')=='failed' and last.get('kind')!='ttm':
                 st.session_state[key+'_error']='최근 '+('가격' if last.get('kind')=='price' else '재무')+' 최신 확인 실패 · '+str(last.get('at'))
 
 
@@ -620,6 +636,7 @@ def lynch_freshness_panel(code,saved,today,manual=False,automatic=None,rerun=Tru
                     if changed:
                         candidate={'data':collect_lynch(official_client(),code,today),'quote':saved.get('quote',{}),'source':'DART'}
                 if changed:
+                    if saved.get('ttm'):candidate['ttm']=saved['ttm']
                     candidate=check_financial_snapshot(candidate)
                     st.session_state['lynch_data_'+code]=candidate
                     st.session_state.pop('lynch_data_'+code+'_error',None)
@@ -634,6 +651,23 @@ def lynch_freshness_panel(code,saved,today,manual=False,automatic=None,rerun=Tru
             lynch_save_remote(code,failed=True,kind='freshness',freshness=record,checked_source=source)
 
 
+def lynch_ttm_refresh(code,today,force=False):
+    key='lynch_data_'+code
+    saved=st.session_state.get(key)
+    if not saved:return
+    at=datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds')
+    old=saved.get('ttm')
+    if not force and not ttm_due(old,at):return
+    try:
+        with st.spinner('공식 자료로 최근 12개월 PER을 확인합니다…'):
+            block=collect_ttm(None if code=='005930' else official_client(),code,today)
+    except (TtmError,DataError,ValueError) as exc:
+        block={**old,'last_error':str(exc),'last_attempt_at':at} if old and old.get('status')=='success' else {'version':1,'status':'failed','code':code,'reason':str(exc),'last_attempt_at':at}
+    st.session_state[key]={**saved,'ttm':block}
+    lynch_save_remote(code,st.session_state[key],failed=block.get('status')!='success' or bool(block.get('last_error')),kind='ttm')
+    return True
+
+
 def lynch_update_saved(code,today):
     key='lynch_data_'+code
     lynch_freshness_panel(code,st.session_state[key],today,manual=True,automatic=False,rerun=False)
@@ -644,6 +678,7 @@ def lynch_update_saved(code,today):
     except (BrokerError,DataError,ValueError) as exc:
         st.session_state[key+'_price_error']=str(exc)
         lynch_save_remote(code,failed=True,kind='price')
+    lynch_ttm_refresh(code,today,force=True)
 
 
 def lynch_status(code,saved):
@@ -722,6 +757,8 @@ def lynch_page():
                 if previous_saved:st.session_state[key]=previous_saved
                 st.session_state[key+'_error']='새 응답의 연간 EPS 확인 불완전 · '+str(exc)
         error=st.session_state.get(key+'_error')
+        if not error and previous_saved and previous_saved.get('ttm') and not st.session_state[key].get('ttm'):
+            st.session_state[key]['ttm']=previous_saved['ttm']
         if not error and previous_saved and not st.session_state.get(key,{}).get('quote',{}).get('close') and previous_saved.get('quote',{}).get('close'):
             st.session_state[key]['quote']={**previous_saved['quote'],'refresh_error':'최근 가격 조회 실패 · 이전 가격과 기준일 유지'}
             st.session_state[key+'_price_error']='최근 가격 조회 실패 · 이전 가격과 기준일 유지'
@@ -742,13 +779,17 @@ def lynch_page():
         st.info('최신 자료 확인을 눌러 분석을 시작하세요.')
         lynch_options(code)
         return
+    if full_refresh:
+        lynch_ttm_refresh(code,today,force=True)
+        saved=st.session_state.get(key,saved)
     status_slot=st.empty()
     with status_slot.container():lynch_status(code,saved)
     if saved.get('source')=='KIS':kis_lynch_result(saved,today)
     else:lynch_results(saved,today)
-    if not refresh_requested and not error:
-        lynch_freshness_panel(code,saved,today)
+    if not refresh_requested:
+        if not error:lynch_freshness_panel(code,saved,today)
         with status_slot.container():lynch_status(code,st.session_state.get(key,saved))
+        if st.session_state.get('lynch_auto_'+code,True) and lynch_ttm_refresh(code,today):st.rerun()
 
 
 def strategy_comparison_page():

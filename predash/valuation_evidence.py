@@ -8,6 +8,7 @@ from copy import deepcopy
 from datetime import date
 from pathlib import Path
 
+VALUATION_VERSION=2
 REFERENCE_PATH=Path(__file__).parent/'data'/'eps_reference_checks.json'
 
 
@@ -72,8 +73,25 @@ def describe(saved,result,today,reference_rows=None):
         'filing_crosscheck':'공시와 EPS 수치 불일치 · 정의 차이 가능' if mismatch else '일부 EPS 수치 일치 · 전체 검증 미완료' if comparisons else '공시 EPS 별도 대조 미실시',
         'valuation_status':'reference_only_mismatch' if mismatch else 'reference_only' if source=='KIS' else 'calculated_from_dart_inputs',
         'price_crosscheck':'시세 제공처 응답 사용 · 별도 원문 대조 미실시'}
-    gaps=list(result.get('data_gaps',[]))
-    gaps.append(result['valuation_basis']['ttm_gap'])
+    from predash.ttm import calculate
+    block=saved.get('ttm')
+    if block and block.get('code')!=data.get('code'):block=None
+    ttm=calculate(block,saved.get('quote',{}),date.fromisoformat(str(today)))
+    result['ttm']=ttm
+    result['annual_per']=result.get('per');result['annual_peg']=result.get('peg')
+    result['per']=ttm['per'];result['primary_per_type']='ttm';result['peg_per_type']='annual_eps'
+    result['valuation_basis'].update(
+        annual_per_type='annual_eps',annual_per_label=result['valuation_basis']['per_label'],
+        annual_eps_year=year,annual_eps_value=latest.get('value'),annual_eps_definition=result['valuation_basis']['eps_definition'],
+        annual_per_formula=result['valuation_basis']['per_formula'],
+        per_type='ttm',per_label='최근 12개월 PER · 공시 재구성',eps_year=None,eps_value=ttm['eps'],
+        eps_period_end=ttm['period_end'],eps_definition='연결 보통주 기본 EPS · 공시 순이익·가중평균 주식수 재구성',
+        per_formula='표시 가격 ÷ 최근 12개월 보통주 기본 EPS 재구성값',
+        primary_per_type='ttm',ttm_per=ttm['per'],ttm_eps=ttm['eps'],
+        ttm_period_start=ttm['period_start'],ttm_period_end=ttm['period_end'],
+        ttm_gap=ttm['data_gaps'][0] if ttm['per'] is None else None,
+        interpretation='주 지표는 공시 순이익·가중평균 주식수로 재구성한 TTM PER. 연간 PER·PEG는 별도 보조값')
+    gaps=list(result.get('data_gaps',[]))+ttm['data_gaps']
     if source=='KIS':gaps.append('KIS EPS의 연결·별도·기본·희석 정의 미대조')
     if mismatch:gaps.append('API EPS와 확인일 기준 공시 기본 EPS 수치 불일치: 원인 미확인, PER·PEG·성장률은 참고 계산')
     result['data_gaps']=list(dict.fromkeys(gaps))

@@ -10,6 +10,7 @@ from predash.cloud_store import StorageError,StorageConflict
 FIELD='lynch_financial_snapshots'
 CACHE_VERSION=1
 FRESHNESS_VERSION=1
+TTM_STORE_VERSION=1
 CALCULATION_VERSION='lynch-4year-v1'
 FORBIDDEN={'key','secret','token','authorization','appkey','appsecret','access_token','cano','account','account_number','quantity','positions','credentials'}
 
@@ -38,7 +39,7 @@ def clean_snapshot(saved):
     years=[r.get('year') for r in annual]
     if any(type(y) is not int for y in years) or sorted(years)!=list(range(min(years),min(years)+5)):
         raise StorageError('연속 5개 연간 EPS가 아닙니다. 이전 저장본 유지')
-    result={k:deepcopy(saved[k]) for k in ('data','quote','source','excluded_periods','validation_level') if k in saved}
+    result={k:deepcopy(saved[k]) for k in ('data','quote','source','excluded_periods','validation_level','ttm') if k in saved}
     result['source']=source
     def inspect(value):
         if isinstance(value,dict):
@@ -101,6 +102,9 @@ def persist(client,code,saved=None,attempt_kind='financial',failed=False,freshne
                 except (KeyError,ValueError,TypeError):pass
             if old and not cleaned.get('quote',{}).get('close') and old.get('quote',{}).get('close'):
                 cleaned['quote']={**deepcopy(old['quote']),'refresh_error':'최근 가격 조회 실패 · 이전 가격과 원래 기준일 유지'}
+            if old and old.get('ttm'):
+                incoming=cleaned.get('ttm')
+                if not incoming or old['ttm'].get('last_attempt_at','')>incoming.get('last_attempt_at',''):cleaned['ttm']=deepcopy(old['ttm'])
             previous_check=entry.get(source,{}).get('freshness') if old and old.get('data')==cleaned['data'] else None
             entry[source]={'snapshot':cleaned,'stored_at':now(),'calculation_version':CALCULATION_VERSION}
             if previous_check:entry[source]['freshness']=deepcopy(previous_check)

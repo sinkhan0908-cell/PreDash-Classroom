@@ -19,9 +19,9 @@ class ValuationEvidenceTests(unittest.TestCase):
     def test_reported_32_is_annual_not_ttm_and_mismatch_retains_original_inputs(self):
         before=deepcopy(self.saved)
         result=describe(self.saved,self.raw,'2026-10-16')
-        self.assertAlmostEqual(result['per'],210000/6564)
-        self.assertAlmostEqual(result['peg'],result['per']/result['cagr'])
-        self.assertEqual(result['valuation_basis']['per_label'],'2025년 연간 EPS 기준 PER')
+        self.assertAlmostEqual(result['annual_per'],210000/6564)
+        self.assertAlmostEqual(result['annual_peg'],result['annual_per']/result['cagr'])
+        self.assertEqual(result['valuation_basis']['annual_per_label'],'2025년 연간 EPS 기준 PER')
         self.assertIsNone(result['valuation_basis']['ttm_per'])
         comparison=result['eps_crosscheck']['comparisons'][0]
         self.assertEqual((comparison['provider_eps'],comparison['reference_eps'],comparison['difference']),(6564,6605,-41))
@@ -57,7 +57,7 @@ class ValuationEvidenceTests(unittest.TestCase):
             path.read_text.side_effect=OSError('missing')
             result=describe(self.saved,self.raw,'2026-10-16')
         self.assertEqual(result['eps_crosscheck']['status'],'not_checked')
-        self.assertAlmostEqual(result['per'],self.raw['per'])
+        self.assertAlmostEqual(result['annual_per'],self.raw['per'])
     def test_invalid_price_per_and_peg_remain_null(self):
         self.raw.update(per=None,peg=None,price_gap='날짜 미확인')
         result=describe(self.saved,self.raw,'2026-10-16')
