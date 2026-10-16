@@ -38,6 +38,7 @@ import predash.financial_store as financial_store_module
 if getattr(financial_store_module, 'FRESHNESS_VERSION', 0) < 1:
     financial_store_module = importlib.reload(financial_store_module)
 select_financial_snapshot, persist_financial_snapshot, check_financial_snapshot = financial_store_module.select_snapshot, financial_store_module.persist, financial_store_module.clean_snapshot
+from predash.lynch_view import PAGE_STYLE as LYNCH_PAGE_STYLE, metrics as lynch_metrics, table as lynch_table, status as lynch_status_html, number as lynch_number
 from predash.financial_freshness import fingerprint as financial_fingerprint, due as financial_check_due, check_dart as check_dart_changes, check_kis as check_kis_changes
 from predash.cloud_store import CloudStore, StorageError, settings as cloud_settings, watch_from_payload as watch_from_cloud
 import predash.kis_probe as kis_probe_module
@@ -460,34 +461,76 @@ def kis_reference_client():
 
 
 def kis_lynch_result(saved, today):
-    data,quote=saved['data'],saved['quote']
-    result=calculate_kis_reference(saved,today)
-    if saved.get('dart_error'):st.info('DART 조회 실패로 KIS 대체 경로 사용 · '+saved['dart_error'])
-    st.subheader(f"{data['name']} · {data['code']}")
-    st.warning('KIS 참고 계산 · EPS의 연결/별도·기본/희석·분할 조정 기준은 DART 원문과 미대조입니다. 전략 적합 판정은 하지 않습니다.')
-    st.caption(f"조회 {data['fetched_at']} · 가격 {quote.get('kind','미확인')} {quote.get('date','미확인')} · {quote.get('source','시세 출처 미확인')}")
-    st.html(lynch_cards_html(result))
-    st.subheader('01  이익 성장 · KIS EPS')
-    st.caption('확인된 결산월과 일치하며 종료된 기간만 사용합니다. 이후 분기·반기 자료를 연간 EPS에 섞지 않습니다.')
-    st.dataframe([{'연도':r['year'],'KIS EPS (원/주)':r['value'],'전년 대비':f"{r['growth']:+.2f}%" if r['growth'] is not None else '—','변화':r['note']} for r in result['history']],hide_index=True,use_container_width=True)
-    if saved['excluded_periods']:st.caption('계산 제외 기간: '+', '.join(saved['excluded_periods']))
-    for reason in result['growth_gaps']:st.info(reason)
-    st.caption('CAGR은 5개 양수 연간 EPS의 4년 성장률입니다. 린치의 20~25% 선호 범위는 참고값이며 고정 합격선이 아닙니다.')
-    st.subheader('02  성장 대비 가격 · KIS 참고값')
-    if quote.get('close') is not None:st.write(f"{quote.get('kind','가격')} **{quote['close']:,.0f}원** · {quote.get('date')}")
-    st.caption('PER = 표시 가격 ÷ 마지막 연간 KIS EPS | 과거 PEG = PER ÷ 4년 EPS CAGR(%)')
-    st.caption('종가를 확보하지 못하면 조회 시점 현재가를 사용하며 명시합니다. 당일 미완료 일봉을 종가로 사용하지 않습니다.')
-    if result['price_gap']:st.info(result['price_gap'])
-    if quote.get('closing_gap'):st.caption('이전 거래일 종가 조회 사유 · '+quote['closing_gap'])
+    lynch_results(saved,today)
+
+
+def lynch_options(code,saved=None,result=None,today=None):
+    with st.expander('고급 설정',expanded=False):
+        st.checkbox('KIS로 직접 조회',value=False,key='lynch_kis_direct')
+        st.checkbox('재무자료 전체 다시 수집',value=False,key='lynch_force_full')
+        st.checkbox('새 자료 자동 확인',value=True,key='lynch_auto_'+code)
+        st.caption('설정을 바꾼 뒤 위의 최신 자료 확인을 누르세요. 기본은 DART 우선·실패 시 KIS입니다. 저장본이 있으면 같은 출처의 변경을 비교하며, 전체 다시 수집을 켜면 조회 경로를 새로 적용합니다.')
+        st.caption('자동 확인은 화면 이용 중 6시간 간격, 실패 시 15분 뒤 재시도합니다. 앱을 닫은 동안에는 실행하지 않습니다.')
+        if saved and result:
+            payload={'schema_version':1,'analysis':result,'financial':saved['data'],'evidence':saved}
+            st.download_button('결과·근거 내려받기',json.dumps(payload,ensure_ascii=False,indent=2,allow_nan=False),file_name=f'lynch-{code}-{today}.json',mime='application/json',key='lynch_export')
+
+
+def lynch_results(saved,today):
+    data,quote=saved['data'],saved.get('quote',{})
+    is_kis=saved.get('source')=='KIS'
+    result=calculate_kis_reference(saved,today) if is_kis else analyse_lynch(data,quote,today.isoformat())
+    history=result['history'];latest=history[-1] if history else {}
+    st.subheader('01  이익 성장')
+    st.html(lynch_metrics([('EPS 4년 CAGR',lynch_number(result['cagr'],'%')),('최근 EPS 성장률',lynch_number(latest.get('growth'),'%'))]))
+    st.html(lynch_table(['연도','KIS EPS (원/주)' if is_kis else '기본 EPS (원/주)','전년 대비','변화'],[
+        [r['year'],lynch_number(r['value'],digits=2),lynch_number(r['growth'],'%') if r['growth'] is not None else '—',r['note']] for r in history]))
+    if result['growth_gaps']:st.caption('성장률 일부 계산 보류 · 사유는 분석 근거에서 확인하세요.')
+    st.subheader('02  성장 대비 가격')
+    st.html(lynch_metrics([(quote.get('kind','종가'),lynch_number(quote.get('close'),'원',0)),('PER',lynch_number(result['per'],'배')),('과거 성장률 기준 PEG',lynch_number(result['peg'],'배',2))]))
+    if result['price_gap'] or quote.get('error'):st.caption('가격 지표 일부 미확인 · 분석 근거에서 기준일과 사유를 확인하세요.')
     st.subheader('03  재무 상태')
-    st.info('현금·차입금 미확인 · KIS EPS 응답에는 해당 세부 계정이 없습니다. DART 재무자료를 확보한 뒤 별도로 확인해야 합니다.')
-    with st.expander('출처 · 계산 설정 · 미확인 항목'):
-        st.write('출처: 한국투자증권 모의 API · 국내주식 재무비율(연간), 현재가 및 일별 시세')
-        st.link_button('한국투자증권 공식 재무비율 샘플','https://github.com/koreainvestment/open-trading-api/tree/main/examples_llm/domestic_stock/finance_financial_ratio')
-        st.caption('현재가 API의 결산월로 연간 기간을 필터링합니다. 회계연도 변경 이력은 미검증입니다. KIS 참고 계산값을 DART 검증 완료 값으로 표시하지 않습니다.')
-        for reason in data['data_gaps']:st.write('· '+reason)
-        st.caption('PER/성장률 참고점 0.5·1·2배. 사업 성장 지속성은 이번 범위에 포함하지 않습니다.')
-    st.download_button('KIS 점검 결과·근거 내려받기',json.dumps({'schema_version':1,'analysis':result,'evidence':saved},ensure_ascii=False,indent=2,allow_nan=False),file_name=f"lynch-kis-{data['code']}-{today}.json",mime='application/json',key='lynch_kis_export')
+    balances=data.get('lynch',{}).get('balances',[])
+    if not is_kis and len(balances)==2:
+        previous,current=balances;rows=[]
+        for name in LYNCH_BS:
+            av=previous['accounts'].get(name,{}).get('value');bv=current['accounts'].get(name,{}).get('value')
+            rows.append([name,lynch_number(av/1e8 if av is not None else None,digits=2),lynch_number(bv/1e8 if bv is not None else None,digits=2),lynch_number((bv-av)/1e8,digits=2) if av is not None and bv is not None else '—'])
+        st.caption('단위: 억원')
+        st.html(lynch_table(['항목','전년 '+str(previous.get('date') or previous['year']),'최근 '+str(current.get('date') or current['year']),'증감'],rows))
+    else:st.info('현금·차입금 미확인'+(' · KIS EPS 응답에 없는 항목입니다.' if is_kis else ' · DART 세부 계정 확인이 필요합니다.'))
+    with st.expander('분석 근거 보기',expanded=False):
+        st.write(f"원자료 수집: {data['fetched_at']} · 평가일: {today}")
+        st.write(f"가격: {quote.get('kind','종가')} {quote.get('date','미확인')} · {quote.get('source','출처 미확인')} · 조회 {quote.get('fetched_at','미확인')}")
+        source=saved.get('source','DART')
+        record=st.session_state.get('lynch_freshness_'+data['code']+'_'+source) or saved.get('_storage',{}).get('freshness')
+        if record and record.get('fingerprint')==financial_fingerprint(saved):st.write('변경 확인: '+str(record.get('checked_at'))+' · '+str(record.get('status')))
+        st.caption(st.session_state.get('lynch_storage_note_'+data['code'],'저장된 원자료로 계산합니다.'))
+        st.caption('최근 5개 완료 사업연도 → 4년 CAGR. CAGR = [(마지막 EPS ÷ 처음 EPS)^(1/4) − 1] × 100. 양수 EPS·연속성·비교 가능성을 확인합니다. 계산 기간과 제한은 구현 설정입니다.')
+        st.caption('PER = 표시 가격 ÷ 최근 연간 EPS. 과거 PEG = PER ÷ 4년 EPS CAGR(%). 이후 분기 이익은 분모에 섞지 않으며 종가의 7일 유효 범위를 점검합니다.')
+        st.caption('린치 참고점: 고성장주 이익 성장 20~25% 선호, PER/성장률 0.5·1·2배 참고. 고정 합격선이나 매수 신호가 아닙니다.')
+        if is_kis:
+            st.write('KIS 참고 계산 · 연결/별도·기본/희석 EPS와 분할 조정 기준은 DART 원문과 미대조입니다. 전략 적합 판정은 하지 않습니다.')
+            st.caption('현재가 응답의 결산월과 일치하는 완료 결산연도만 사용합니다. 회계연도 변경 이력은 미검증입니다.')
+            st.caption('계산 제외 기간: '+(', '.join(saved.get('excluded_periods',[])) or '없음'))
+            st.link_button('KIS 공식 재무비율 API','https://github.com/koreainvestment/open-trading-api/tree/main/examples_llm/domestic_stock/finance_financial_ratio')
+        else:
+            st.caption('연결 우선 · '+str(data.get('basis'))+' 재무제표. 인접 공시 전기 EPS를 대조하나 주식 분할·재작성 전체의 수동 검증 완료를 의미하지 않습니다.')
+        evidence=[{'기간':r['period_end'],'항목':r['metric'],'원문':r.get('source'),'사유':r.get('data_gap')} for r in history]
+        evidence += [{'기간':b.get('date'),'항목':'현금·차입금','원문':b.get('source'),'사유':b.get('error')} for b in balances]
+        st.dataframe(evidence,hide_index=True,use_container_width=True)
+        if not is_kis:
+            for index,url in enumerate(dict.fromkeys(r['원문'] for r in evidence if r['원문']),1):st.link_button(f'DART 공시 원문 {index}',url)
+        st.caption('차입금은 부채총계와 다릅니다. 누락·중복 계정은 추정하지 않고 미확인으로 둡니다. 단기 금융상품과 리스부채는 이번 범위에서 제외합니다.')
+        reasons=list(result['growth_gaps'])+list(data.get('data_gaps',[]))
+        reasons += [result.get('price_gap'),quote.get('error'),quote.get('closing_gap'),quote.get('refresh_error'),saved.get('dart_error')]
+        reasons += [st.session_state.get('lynch_data_'+data['code']+suffix) for suffix in ('_error','_price_error')]
+        for b in balances:
+            reasons += [b.get('error')]+[v.get('reason') for v in b.get('accounts',{}).values()]
+        for reason in dict.fromkeys(r for r in reasons if r):st.write('· '+str(reason))
+        st.link_button('린치 참고 도서 · 출판사',LYNCH_SOURCE)
+        st.caption('One Up on Wall Street 13장 Some Famous Numbers, 15장 The Final Checklist. 사업 성장 지속성은 별도 조사 대상입니다.')
+    lynch_options(data['code'],saved,result,today)
 
 
 def lynch_restore_saved(code):
@@ -544,14 +587,11 @@ def lynch_refresh_price(saved, today):
     return {**saved,'quote':quote}
 
 
-def lynch_freshness_panel(code,saved,today):
-    st.subheader('새 재무자료 확인')
-    st.caption('저장본을 먼저 표시합니다. 화면을 이용할 때 6시간 간격으로 확인하며, 실패하면 15분 뒤 다시 시도합니다. 앱을 닫은 동안에는 실행하지 않습니다.')
+def lynch_freshness_panel(code,saved,today,manual=False,automatic=None,rerun=True):
     source=saved.get('source','DART')
     cache_key='lynch_freshness_'+code+'_'+source
     record=st.session_state.get(cache_key) or saved.get('_storage',{}).get('freshness')
-    automatic=st.checkbox('새 자료 자동 확인',value=True,key='lynch_auto_'+code)
-    manual=st.button('지금 변경 확인',key='lynch_check_'+code)
+    if automatic is None:automatic=st.session_state.get('lynch_auto_'+code,True)
     at=datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds')
     if manual or (automatic and financial_check_due(saved,record,at)):
         changed=False
@@ -571,20 +611,41 @@ def lynch_freshness_panel(code,saved,today):
             record={'fingerprint':financial_fingerprint(saved),'checked_at':at,'status':'updated' if changed else 'unchanged'}
             st.session_state[cache_key]=record
             lynch_save_remote(code,saved if changed else None,kind='freshness',freshness=record,checked_source=source)
-            if changed:st.rerun()
+            if changed and rerun:st.rerun()
         except (StorageError,DataError,BrokerError,ValueError,TypeError,KeyError):
             record={'fingerprint':financial_fingerprint(saved),'checked_at':at,'status':'failed'}
             st.session_state[cache_key]=record
             lynch_save_remote(code,failed=True,kind='freshness',freshness=record,checked_source=source)
-    if record and record.get('fingerprint')==financial_fingerprint(saved):
-        label={'unchanged':'확인 범위 내 변경 없음','updated':'변경 감지 · 새 자료 반영','failed':'최신 여부 확인 실패 · 이전 성공 자료 유지'}.get(record.get('status'),'확인 필요')
-        st.caption(label+' · 확인 시각 '+str(record.get('checked_at')))
-    st.caption('DART: 새 정기보고서·정정공시 접수번호 확인. KIS: 완료 결산연도 EPS 응답 비교이며 DART 원문 검증을 뜻하지 않습니다. 가격은 별도 새로 조회합니다.')
+
+
+def lynch_update_saved(code,today):
+    key='lynch_data_'+code
+    lynch_freshness_panel(code,st.session_state[key],today,manual=True,automatic=False,rerun=False)
+    try:
+        st.session_state[key]=lynch_refresh_price(st.session_state[key],today)
+        st.session_state.pop(key+'_price_error',None)
+        lynch_save_remote(code,st.session_state[key],kind='price')
+    except (BrokerError,DataError,ValueError) as exc:
+        st.session_state[key+'_price_error']=str(exc)
+        lynch_save_remote(code,failed=True,kind='price')
+
+
+def lynch_status(code,saved):
+    source=saved.get('source','DART')
+    record=st.session_state.get('lynch_freshness_'+code+'_'+source) or saved.get('_storage',{}).get('freshness')
+    try:
+        if record and record.get('fingerprint')!=financial_fingerprint(saved):record=None
+    except StorageError:record=None
+    failed=bool(st.session_state.get('lynch_data_'+code+'_error') or st.session_state.get('lynch_data_'+code+'_price_error'))
+    st.html(lynch_status_html(saved,record,failed))
+    note=st.session_state.get('lynch_storage_note_'+code,'')
+    if '클라우드 저장 확인 실패' in note:st.warning('클라우드 저장 실패 · 화면의 결과는 유지됩니다. 분석 근거에서 확인하세요.')
 
 
 def lynch_page():
+    st.html(LYNCH_PAGE_STYLE)
     st.title('린치 고성장주 정량 점검')
-    st.caption('이익 성장 · 성장 대비 가격 · 재무 상태 | 공개 재무자료와 종가로 확인하는 첫 점검')
+    st.caption('성장과 가격, 재무 상태를 한눈에')
     codes = clean_codes(st.session_state.get('watch_codes', []) + st.query_params.get('watch', '').split(','))
     if not codes:
         st.info('관심종목 분석에서 종목을 추가해 주세요.')
@@ -592,16 +653,20 @@ def lynch_page():
     labels = st.session_state.setdefault('lynch_option_labels', {})
     for code in codes:
         labels.setdefault(code, f"{st.session_state.get('watch_names', {}).get(code, code)} · {code}")
-    code = st.selectbox('점검할 관심종목', codes, format_func=lambda c: labels[c], key='lynch_company')
-    st.caption('계산 설정: 최근 5개 완료 사업연도 → 4년 CAGR · 연결 우선 · 가격은 최근 연간 기본 EPS 기준. 이 설정은 린치가 지정한 고정 공식이 아닙니다.')
+    company_column,action_column=st.columns([4,1.5])
+    with company_column:
+        code = st.selectbox('점검할 관심종목', codes, format_func=lambda c: labels[c], key='lynch_company')
     key = 'lynch_data_' + code
     today = datetime.now(ZoneInfo('Asia/Seoul')).date()
     lynch_restore_saved(code)
-    kis_direct = st.checkbox('KIS 성장·가격으로 바로 조회 · DART 대기 생략', value=False, key='lynch_kis_direct')
-    st.caption('기본 경로는 DART 우선·실패 시 KIS입니다. KIS 바로 조회는 성장·가격만 참고 계산하고 재무 상태는 미확인으로 남깁니다.')
+    kis_direct = st.session_state.get('lynch_kis_direct',False)
     previous_saved=st.session_state.get(key)
-    refresh_requested=st.button('최신 자료 조회·점검', type='primary', key='lynch_refresh')
-    if refresh_requested:
+    with action_column:
+        st.caption(' ')
+        refresh_requested=st.button('최신 자료 확인', type='primary', key='lynch_refresh',use_container_width=True)
+    full_refresh=refresh_requested and (not previous_saved or st.session_state.get('lynch_force_full',False) or (kis_direct and previous_saved.get('source')!='KIS'))
+    if refresh_requested and not full_refresh:lynch_update_saved(code,today)
+    if full_refresh:
         if kis_direct:
             try:
                 with st.spinner('KIS 연간 EPS와 가격을 조회합니다…'):
@@ -634,98 +699,40 @@ def lynch_page():
                         st.session_state.pop(key+'_error',None)
                 except (BrokerError,ValueError) as kis_exc:
                     st.session_state[key+'_error']=str(exc)+' · KIS 대체 조회: '+str(kis_exc)
-    if refresh_requested:
+    if full_refresh:
         if not st.session_state.get(key+'_error') and st.session_state.get(key):
             try:check_financial_snapshot(st.session_state[key])
             except StorageError as exc:
                 if previous_saved:st.session_state[key]=previous_saved
                 st.session_state[key+'_error']='새 응답의 연간 EPS 확인 불완전 · '+str(exc)
         error=st.session_state.get(key+'_error')
-        if not error and st.session_state.get(key,{}).get('quote',{}).get('close'):
+        if not error and previous_saved and not st.session_state.get(key,{}).get('quote',{}).get('close') and previous_saved.get('quote',{}).get('close'):
+            st.session_state[key]['quote']={**previous_saved['quote'],'refresh_error':'최근 가격 조회 실패 · 이전 가격과 기준일 유지'}
+            st.session_state[key+'_price_error']='최근 가격 조회 실패 · 이전 가격과 기준일 유지'
+        if not error and st.session_state.get(key,{}).get('quote',{}).get('close') and not st.session_state[key]['quote'].get('refresh_error'):
             st.session_state.pop(key+'_price_error',None)
         lynch_save_remote(code,st.session_state.get(key) if not error else None,failed=bool(error))
-    price_requested=st.button('가격만 새로 조회 · 저장 EPS 재사용',key='lynch_price_refresh',disabled=not st.session_state.get(key))
-    if price_requested and not refresh_requested:
-        try:
-            st.session_state[key]=lynch_refresh_price(st.session_state[key],today)
-            st.session_state.pop(key+'_price_error',None)
-            lynch_save_remote(code,st.session_state[key],kind='price')
-        except (BrokerError,DataError,ValueError) as exc:
-            st.session_state[key+'_price_error']=str(exc)
-            lynch_save_remote(code,failed=True,kind='price')
     saved = st.session_state.get(key)
     error=st.session_state.get(key+'_error')
     if error:
-        st.warning('최신 여부 확인 실패 · '+error)
-        if not saved:return
-        st.caption('이전 성공 자료 사용 · 원래 수집 시각과 대상 기간을 유지합니다. 새 자료가 없다는 뜻은 아닙니다.')
+        st.warning('최신 여부 확인 실패 · 이전 자료가 있으면 유지합니다. 상세 사유는 분석 근거에서 확인하세요.')
+        if not saved:
+            st.caption(error)
+            lynch_options(code)
+            return
     if st.session_state.get(key+'_price_error'):
-        st.warning('최근 가격 조회 실패 · 이전 가격 기준일 유지 · '+st.session_state[key+'_price_error'])
+        st.warning('가격 조회 실패 · 이전 가격과 기준일을 유지합니다.')
     if not saved:
-        st.info('저장 자료가 없습니다. 최신 자료 조회·점검을 눌러 주세요.')
+        st.info('최신 자료 확인을 눌러 분석을 시작하세요.')
+        lynch_options(code)
         return
-    data, quote = saved['data'], saved['quote']
-    fetched = datetime.fromisoformat(data['fetched_at'])
-    if (datetime.now(ZoneInfo('Asia/Seoul'))-fetched).total_seconds() > 86400:
-        st.warning('원자료 수집 후 24시간 경과 · 새 재무자료 확인 결과와 가격 기준일을 함께 확인해 주세요.')
-    if quote.get('refresh_error'):st.warning(quote['refresh_error'])
-    if saved.get('_storage',{}).get('restored'):
-        st.info('Supabase 저장본에서 복원 · 원자료 수집 '+data['fetched_at'])
-    st.caption(st.session_state.get('lynch_storage_note_'+code,'저장 자료 우선 표시 · 새 자료 확인은 아래에서 관리합니다.'))
-    st.caption('계산은 표시된 원자료와 평가 기준일을 사용합니다. 변경 확인 시각과 원자료 수집 시각은 구분합니다.')
-    if saved.get('source') == 'KIS':
-        kis_lynch_result(saved,today)
+    status_slot=st.empty()
+    with status_slot.container():lynch_status(code,saved)
+    if saved.get('source')=='KIS':kis_lynch_result(saved,today)
+    else:lynch_results(saved,today)
+    if not refresh_requested and not error:
         lynch_freshness_panel(code,saved,today)
-        return
-    result = analyse_lynch(data, quote, today.isoformat())
-    st.subheader(f"{data['name']} · {code}")
-    st.caption(f"재무 조회 {data['fetched_at']} · {'연결' if data['basis']=='CFS' else '별도'} 재무제표 · 종가 {quote.get('date','미확인')} · {quote.get('source','출처 미확인')}")
-    st.html(lynch_cards_html(result))
-    st.subheader('01  이익 성장')
-    st.caption('원문 참고: 고성장주 이익 성장 20~25% 선호. 초과는 자동 탈락이 아니라 지속 가능성 확인 대상입니다.')
-    st.dataframe([{'연도':r['year'],'기본 EPS (원/주)':f"{r['value']:,.2f}" if r['value'] is not None else '미확인',
-                   '전년 대비':f"{r['growth']:+.2f}%" if r['growth'] is not None else '—', '변화':r['note']} for r in result['history']], hide_index=True, use_container_width=True)
-    if result['growth_gaps']:
-        st.warning(' · '.join(result['growth_gaps']))
-    st.caption('양수 EPS가 연속 5개 있고 인접 공시의 비교 EPS가 일치할 때 CAGR을 계산합니다. 중간 적자 제한은 구현 설정입니다. 주식 분할·재작성 공시 전체 수동 대조 완료를 의미하지 않습니다.')
-    st.subheader('02  성장 대비 가격')
-    st.write(f"종가 **{quote['close']:,.0f}원** · {quote.get('date')}" if quote.get('close') is not None else '종가 미확인')
-    st.caption('원문 참고점: PER이 이익 성장률의 절반이면 긍정적, 비슷하면 적정 참고점, 두 배이면 부정적. PEG 환산 0.5 · 1 · 2배이며 매수 신호가 아닙니다.')
-    st.caption('PER = 종가 ÷ 최근 연간 기본 EPS | 과거 PEG = PER ÷ 4년 EPS CAGR(%)')
-    if result['price_gap'] or quote.get('error'):
-        st.warning(result['price_gap'] or quote['error'])
-        if quote.get('error'): st.caption(quote['error'])
-    elif result['peg'] is None:
-        st.info('양수 성장률과 비교 가능한 EPS가 필요하여 PEG는 계산 보류입니다.')
-    latest_period = max((r.get('period_end') or '' for r in data['rows']),default='')
-    st.caption(f"최근 수집 보고기간 {latest_period} · PER 분모는 {result['eps_year']}년 연간 EPS이며 이후 분기 이익은 반영하지 않습니다. 사용 종가의 날짜·출처와 7일 유효 범위를 점검합니다.")
-    st.subheader('03  재무 상태')
-    st.caption('금액은 억원 · 같은 보고서 종류의 전년 동기 말과 비교 · 합격·탈락 임계값 없음')
-    balances = data.get('lynch',{}).get('balances',[])
-    if len(balances)==2:
-        previous,current=balances
-        rows=[]
-        for name in LYNCH_BS:
-            a=previous['accounts'].get(name,{}); b=current['accounts'].get(name,{})
-            av,bv=a.get('value'),b.get('value')
-            rows.append({'항목':name, f"전년 {previous['date'] or previous['year']}":f'{av/1e8:,.2f}' if av is not None else '미확인',
-                         f"현재 {current['date'] or current['year']}":f'{bv/1e8:,.2f}' if bv is not None else '미확인',
-                         '증감 (억원)':f'{(bv-av)/1e8:+,.2f}' if av is not None and bv is not None else '—',
-                         '확인 사유':' / '.join(dict.fromkeys(v for v in (a.get('reason'),b.get('reason'),previous.get('error'),current.get('error')) if v))})
-        st.dataframe(rows, hide_index=True, use_container_width=True)
-    st.caption('차입금은 부채총계와 다릅니다. 세부 계정 누락·포괄 계정과의 중복 가능성 때문에 총차입금·순차입금은 추정하지 않습니다. 단기 금융상품과 리스부채는 이번 표 범위에서 제외합니다.')
-    with st.expander('계산 근거 · 원문 · 미확인 항목'):
-        st.caption('CAGR = [(마지막 EPS ÷ 처음 EPS)^(1/4) − 1] × 100. 전년 EPS가 0·음수이면 성장률 대신 전환 상태를 표시합니다.')
-        source_rows=[{'기간':str(r['year']),'항목':'기본 EPS','기준일':r['period_end'],'원문':r['source'],'사유':r.get('data_gap')} for r in result['history']]
-        source_rows += [{'기간':str(b['year']),'항목':'현금·차입금','기준일':b['date'],'원문':b['source'],'사유':b.get('error')} for b in balances]
-        st.dataframe(source_rows,hide_index=True,use_container_width=True)
-        for index,url in enumerate(dict.fromkeys(r['원문'] for r in source_rows if r['원문']),1):
-            st.link_button(f'DART 공시 원문 {index}',url)
-        st.link_button('린치 참고 도서 · 출판사', LYNCH_SOURCE)
-        st.caption('원문 위치: One Up on Wall Street 13장 Some Famous Numbers, 15장 The Final Checklist의 Fast Growers 및 공통 항목. 계산 기간·양수 제한·종가 유효기간은 구현 설정입니다.')
-        st.caption('실제 사업 확장의 지속성은 이번 범위에 포함하지 않습니다. API 자동 점검은 공시 전체의 수동 검증과 다릅니다.')
-    st.download_button('점검 결과·근거 내려받기',json.dumps({'schema_version':1,'analysis':result,'financial':data},ensure_ascii=False,indent=2,allow_nan=False),file_name=f'lynch-{code}-{today}.json',mime='application/json',key='lynch_export')
-    lynch_freshness_panel(code,saved,today)
+        with status_slot.container():lynch_status(code,st.session_state.get(key,saved))
 
 
 def strategy_comparison_page():

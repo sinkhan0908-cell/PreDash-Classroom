@@ -73,11 +73,11 @@ class FinancialStoreTests(unittest.TestCase):
         self.assertIsNone(select_snapshot(self.db['payload'],'005930'))
     def test_page_failed_requery_still_renders_old_snapshot_over_24_hours(self):
         st=MagicMock();cached=deepcopy(self.saved);cached['source']='KIS'
-        st.session_state={'watch_codes':['005930'],'watch_names':{},'lynch_data_005930':cached}
-        st.query_params={};st.selectbox.return_value='005930';st.checkbox.return_value=True
+        st.session_state={'watch_codes':['005930'],'watch_names':{},'lynch_data_005930':cached,'lynch_force_full':True,'lynch_kis_direct':True}
+        st.columns.return_value=[MagicMock(),MagicMock()];st.query_params={};st.selectbox.return_value='005930';st.checkbox.return_value=True
         st.button.side_effect=[True,False]
         render=Mock();store=Mock()
-        ns=dict(lynch_freshness_panel=Mock(),st=st,datetime=datetime,ZoneInfo=ZoneInfo,clean_codes=lambda x:[c for c in x if c],lynch_restore_saved=Mock(),
+        ns=dict(LYNCH_PAGE_STYLE='',lynch_status=Mock(),lynch_freshness_panel=Mock(),st=st,datetime=datetime,ZoneInfo=ZoneInfo,clean_codes=lambda x:[c for c in x if c],lynch_restore_saved=Mock(),
                 collect_kis_reference=Mock(side_effect=BrokerError('timeout')),kis_reference_client=Mock(),lynch_save_remote=store,
                 DataError=DataError,BrokerError=BrokerError,kis_lynch_result=render)
         node=next(n for n in ast.parse(Path('app.py').read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='lynch_page')

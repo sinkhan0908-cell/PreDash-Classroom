@@ -11,7 +11,7 @@ from predash.lynch_kis import build_reference,calculate_reference,collect_refere
 
 class KisReferenceTests(unittest.TestCase):
     def fixture(self):
-        return {'mode':'demo','code':'005930','fetched_at':datetime.now(ZoneInfo('Asia/Seoul')).isoformat(),
+        return {'mode':'demo','code':'005930','fetched_at':'2026-10-15T15:00:00+09:00',
                 'results':[{'path':PRICE,'success':True,'values':{'stck_prpr':210000,'eps':6564,'per':31.99,'stac_month':12}},
                            {'path':RATIOS,'success':True,'annual_eps':[{'period':str(y)+'12','eps':v} for y,v in zip(range(2021,2026),[5777,8057,2131,4950,6564])]+[{'period':'202606','eps':17687}], 'more_pages':False}]}
     def test_completed_years_only_and_reference_calculations(self):
@@ -50,11 +50,11 @@ class KisReferenceTests(unittest.TestCase):
         self.assertEqual(saved['quote']['kind'],'현재가');self.assertIn('closing_gap',saved['quote'])
     def test_real_page_dart_failure_falls_back_and_direct_path_skips_dart(self):
         for direct in (False,True):
-            st=MagicMock();st.session_state={'watch_codes':['005930'],'watch_names':{}};st.query_params={}
+            st=MagicMock();st.session_state={'watch_codes':['005930'],'watch_names':{},'lynch_kis_direct':direct};st.columns.return_value=[MagicMock(),MagicMock()];st.query_params={}
             st.selectbox.return_value='005930';st.checkbox.return_value=direct;st.button.return_value=True
             saved=build_reference(self.fixture(),datetime.now(ZoneInfo('Asia/Seoul')).date())
             dart=Mock(side_effect=DataError('기업개황 timeout'));fallback=Mock(return_value=saved);render=Mock()
-            ns=dict(lynch_freshness_panel=Mock(),check_financial_snapshot=Mock(),lynch_restore_saved=Mock(),lynch_save_remote=Mock(),st=st,clean_codes=lambda codes:[c for c in codes if c],datetime=datetime,ZoneInfo=ZoneInfo,
+            ns=dict(LYNCH_PAGE_STYLE='',lynch_status=Mock(),lynch_freshness_panel=Mock(),check_financial_snapshot=Mock(),lynch_restore_saved=Mock(),lynch_save_remote=Mock(),st=st,clean_codes=lambda codes:[c for c in codes if c],datetime=datetime,ZoneInfo=ZoneInfo,
                     api_key=lambda k:'configured',collect_lynch=dart,official_client=Mock(),
                     collect_kis_reference=fallback,kis_reference_client=Mock(),kis_lynch_result=render,
                     DataError=DataError,BrokerError=BrokerError,re=re)

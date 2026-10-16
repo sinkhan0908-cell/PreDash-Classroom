@@ -75,12 +75,15 @@ class LynchTests(unittest.TestCase):
         self.data['fetched_at']=datetime.now(ZoneInfo('Asia/Seoul')).isoformat()
         st=MagicMock()
         st.session_state={'watch_codes':['005930'],'watch_names':{},'lynch_data_005930':{'data':self.data,'quote':self.quote}}
-        st.query_params={}
+        st.columns.return_value=[MagicMock(),MagicMock()];st.query_params={}
         st.selectbox.return_value='005930';st.button.return_value=False
-        ns=dict(lynch_freshness_panel=MagicMock(),lynch_restore_saved=MagicMock(),lynch_save_remote=MagicMock(),st=st,datetime=datetime,ZoneInfo=ZoneInfo,clean_codes=lambda codes:[c for c in codes if c],re=re,json=json,
+        ns=dict(LYNCH_PAGE_STYLE='',lynch_freshness_panel=MagicMock(),lynch_restore_saved=MagicMock(),lynch_save_remote=MagicMock(),st=st,datetime=datetime,ZoneInfo=ZoneInfo,clean_codes=lambda codes:[c for c in codes if c],re=re,json=json,
                 analyse_lynch=analyse,lynch_cards_html=cards_html,LYNCH_BS=BS,LYNCH_SOURCE=SOURCE)
-        node=next(n for n in ast.parse(Path('app.py').read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='lynch_page')
-        exec(compile(ast.Module(body=[node],type_ignores=[]),'app.py','exec'),ns)
+        from predash.lynch_view import metrics,table,number
+        from predash.financial_freshness import fingerprint
+        ns.update(lynch_status=MagicMock(),lynch_metrics=metrics,lynch_table=table,lynch_number=number,financial_fingerprint=fingerprint)
+        nodes=[n for n in ast.parse(Path('app.py').read_text()).body if isinstance(n,ast.FunctionDef) and n.name in ('lynch_page','lynch_results','lynch_options')]
+        exec(compile(ast.Module(body=nodes,type_ignores=[]),'app.py','exec'),ns)
         ns['lynch_page']()
         sections=[c.args[0] for c in st.subheader.call_args_list]
         for title in ['01  이익 성장','02  성장 대비 가격','03  재무 상태']: self.assertIn(title,sections)
