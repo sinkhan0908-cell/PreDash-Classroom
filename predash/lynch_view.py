@@ -36,9 +36,9 @@ def status(saved,record=None,failed=False):
     label='이전 자료 사용 · 확인 실패' if failed or (record or {}).get('status')=='failed' else '저장 자료 사용'
     checked=day((record or {}).get('checked_at'))
     if record and record.get('status')!='failed':
-        checked+=' 확인'
-    source='KIS 참고값 · 원문 미대조' if saved.get('source')=='KIS' else 'DART'
-    parts=[label,source,'재무 '+day(data.get('fetched_at'))+' 수집','변경 '+checked,quote.get('kind','종가')+' '+day(quote.get('date'))]
+        checked+=' API 확인'
+    source='KIS 참고값 · EPS 정의 원문 미대조' if saved.get('source')=='KIS' else 'DART'
+    parts=[label,source,'재무 '+day(data.get('fetched_at'))+' 수집','API 변경 '+checked,quote.get('kind','종가')+' '+day(quote.get('date'))]
     return STYLE+'<div class="lynch-status">'+escape('　·　'.join(parts))+'</div>'
 
 

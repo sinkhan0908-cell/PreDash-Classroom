@@ -1,3 +1,4 @@
+from predash.valuation_evidence import describe as describe_lynch_valuation
 import unittest
 from copy import deepcopy
 from tests_strategy_evidence import fixture
@@ -81,7 +82,7 @@ class LynchTests(unittest.TestCase):
                 analyse_lynch=analyse,lynch_cards_html=cards_html,LYNCH_BS=BS,LYNCH_SOURCE=SOURCE)
         from predash.lynch_view import metrics,table,number
         from predash.financial_freshness import fingerprint
-        ns.update(lynch_status=MagicMock(),lynch_metrics=metrics,lynch_table=table,lynch_number=number,financial_fingerprint=fingerprint)
+        ns.update(describe_lynch_valuation=describe_lynch_valuation,lynch_status=MagicMock(),lynch_metrics=metrics,lynch_table=table,lynch_number=number,financial_fingerprint=fingerprint)
         nodes=[n for n in ast.parse(Path('app.py').read_text()).body if isinstance(n,ast.FunctionDef) and n.name in ('lynch_page','lynch_results','lynch_options')]
         exec(compile(ast.Module(body=nodes,type_ignores=[]),'app.py','exec'),ns)
         ns['lynch_page']()

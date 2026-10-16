@@ -1,3 +1,4 @@
+from predash.valuation_evidence import describe as describe_lynch_valuation
 import ast,sys,types,json,re,unittest
 try:import requests
 except ImportError:sys.modules['requests']=types.SimpleNamespace(RequestException=Exception,request=None)
@@ -59,7 +60,7 @@ class CompactLynchTests(unittest.TestCase):
         self.st.button.assert_called_once();self.assertEqual(self.st.button.call_args.args[0],'최신 자료 확인')
         ns['lynch_update_saved'].assert_called_once();ns['lynch_freshness_panel'].assert_not_called();ns['lynch_results'].assert_called_once()
     def test_collapsed_evidence_and_settings_preserve_export_and_unknown_balances(self):
-        ns=functions(['lynch_results','lynch_options'],dict(st=self.st,json=json,analyse_lynch=analyse,lynch_metrics=metrics,lynch_table=table,lynch_number=number,
+        ns=functions(['lynch_results','lynch_options'],dict(describe_lynch_valuation=describe_lynch_valuation,st=self.st,json=json,analyse_lynch=analyse,lynch_metrics=metrics,lynch_table=table,lynch_number=number,
             financial_fingerprint=fingerprint,LYNCH_BS=BS,LYNCH_SOURCE=SOURCE))
         ns['lynch_results'](self.saved,date(2026,10,16))
         self.assertEqual([c.args[0] for c in self.st.expander.call_args_list],['분석 근거 보기','고급 설정'])

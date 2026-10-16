@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "references": [
+    {
+      "code": "005930",
+      "year": 2025,
+      "period_end": "2025-12-31",
+      "report_code": "11011",
+      "basis": "CFS",
+      "accounting_standard": "K-IFRS",
+      "metric": "보통주 기본 EPS",
+      "unit": "원/주",
+      "value": 6605,
+      "checked_on": "2026-10-16",
+      "source": "https://images.samsung.com/is/content/samsung/assets/global/ir/docs/2025_con_quarter04_all.pdf",
+      "source_location": "주석 26(A)(1), 인쇄 75쪽 / PDF 75번째 페이지",
+      "scope": "연결 보통주 기본 EPS 한 항목의 원문 수치 확인. 전체 재무자료 검증 및 이후 정정 여부 자동 확인을 뜻하지 않음."
+    }
+  ]
+}

@@ -38,6 +38,7 @@ import predash.financial_store as financial_store_module
 if getattr(financial_store_module, 'FRESHNESS_VERSION', 0) < 1:
     financial_store_module = importlib.reload(financial_store_module)
 select_financial_snapshot, persist_financial_snapshot, check_financial_snapshot = financial_store_module.select_snapshot, financial_store_module.persist, financial_store_module.clean_snapshot
+from predash.valuation_evidence import describe as describe_lynch_valuation
 from predash.lynch_view import PAGE_STYLE as LYNCH_PAGE_STYLE, metrics as lynch_metrics, table as lynch_table, status as lynch_status_html, number as lynch_number
 from predash.financial_freshness import fingerprint as financial_fingerprint, due as financial_check_due, check_dart as check_dart_changes, check_kis as check_kis_changes
 from predash.cloud_store import CloudStore, StorageError, settings as cloud_settings, watch_from_payload as watch_from_cloud
@@ -480,6 +481,8 @@ def lynch_results(saved,today):
     data,quote=saved['data'],saved.get('quote',{})
     is_kis=saved.get('source')=='KIS'
     result=calculate_kis_reference(saved,today) if is_kis else analyse_lynch(data,quote,today.isoformat())
+    result=describe_lynch_valuation(saved,result,today)
+    valuation=result['valuation_basis'];crosscheck=result['eps_crosscheck']
     history=result['history'];latest=history[-1] if history else {}
     st.subheader('01  이익 성장')
     st.html(lynch_metrics([('EPS 4년 CAGR',lynch_number(result['cagr'],'%')),('최근 EPS 성장률',lynch_number(latest.get('growth'),'%'))]))
@@ -487,7 +490,11 @@ def lynch_results(saved,today):
         [r['year'],lynch_number(r['value'],digits=2),lynch_number(r['growth'],'%') if r['growth'] is not None else '—',r['note']] for r in history]))
     if result['growth_gaps']:st.caption('성장률 일부 계산 보류 · 사유는 분석 근거에서 확인하세요.')
     st.subheader('02  성장 대비 가격')
-    st.html(lynch_metrics([(quote.get('kind','종가'),lynch_number(quote.get('close'),'원',0)),('PER',lynch_number(result['per'],'배')),('과거 성장률 기준 PEG',lynch_number(result['peg'],'배',2))]))
+    suffix=' · 참고' if is_kis or crosscheck['status']=='numeric_mismatch' else ''
+    st.html(lynch_metrics([(quote.get('kind','종가'),lynch_number(quote.get('close'),'원',0)),(valuation['per_label']+suffix,lynch_number(result['per'],'배')),(valuation['peg_label']+suffix,lynch_number(result['peg'],'배',2))]))
+    st.caption(f"분모: {valuation['eps_year']}년 EPS {lynch_number(valuation['eps_value'],'원',2)} · 최근 12개월(TTM)·예상 PER과 구분")
+    if crosscheck['status']=='numeric_mismatch':
+        st.warning('EPS 공시 수치 불일치 · PER·PEG·성장률은 참고값입니다. 분석 근거에서 대조값과 출처를 확인하세요.')
     if result['price_gap'] or quote.get('error'):st.caption('가격 지표 일부 미확인 · 분석 근거에서 기준일과 사유를 확인하세요.')
     st.subheader('03  재무 상태')
     balances=data.get('lynch',{}).get('balances',[])
@@ -504,9 +511,18 @@ def lynch_results(saved,today):
         st.write(f"가격: {quote.get('kind','종가')} {quote.get('date','미확인')} · {quote.get('source','출처 미확인')} · 조회 {quote.get('fetched_at','미확인')}")
         source=saved.get('source','DART')
         record=st.session_state.get('lynch_freshness_'+data['code']+'_'+source) or saved.get('_storage',{}).get('freshness')
-        if record and record.get('fingerprint')==financial_fingerprint(saved):st.write('변경 확인: '+str(record.get('checked_at'))+' · '+str(record.get('status')))
+        if record and record.get('fingerprint')==financial_fingerprint(saved):st.write('API 변경 확인: '+str(record.get('checked_at'))+' · '+{'unchanged':'제공처 응답 변경 없음','updated':'제공처 새 자료 반영','failed':'확인 실패'}.get(record.get('status'),'상태 미확인'))
         st.caption(st.session_state.get('lynch_storage_note_'+data['code'],'저장된 원자료로 계산합니다.'))
         st.caption('최근 5개 완료 사업연도 → 4년 CAGR. CAGR = [(마지막 EPS ÷ 처음 EPS)^(1/4) − 1] × 100. 양수 EPS·연속성·비교 가능성을 확인합니다. 계산 기간과 제한은 구현 설정입니다.')
+        st.write('원문 대조: '+result['verification']['filing_crosscheck'])
+        st.caption('API 조회 성공·변경 없음은 제공처 응답 확인이며 공시 원문 검증 완료를 뜻하지 않습니다. 원문 대조는 아래 확인일에 한정합니다.')
+        st.write(f"PER 분모: {valuation['eps_year']}년 EPS {valuation['eps_value']}원 · {valuation['eps_definition']}")
+        st.write(f"PEG: {valuation['per_label']} ÷ {valuation['growth_start_year']}~{valuation['growth_end_year']}년 EPS CAGR(%)")
+        st.caption('최근 12개월 PER: 미산출 · '+valuation['ttm_gap'])
+        if crosscheck['comparisons']:
+            st.dataframe([{'연도':r['year'],'API EPS':r['provider_eps'],'공시 기본 EPS':r['reference_eps'],'차이 (원/주)':r['difference'],'판정':'수치 불일치' if r['status']=='numeric_mismatch' else '수치 일치 · 정의 별도 확인','원문 확인일':r['checked_on'],'원문 위치':r['source_location'],'출처':r['source']} for r in crosscheck['comparisons']],hide_index=True,use_container_width=True)
+            for url in dict.fromkeys(r['source'] for r in crosscheck['comparisons']):st.link_button('EPS 대조 원문',url)
+        st.caption('KIS EPS 정의 차이·제공처 갱신 시점·정정 등 불일치 원인은 확인되지 않았습니다. API 수치를 공시 값으로 자동 덮어쓰지 않습니다.' if crosscheck['status']=='numeric_mismatch' else crosscheck['scope'])
         st.caption('PER = 표시 가격 ÷ 최근 연간 EPS. 과거 PEG = PER ÷ 4년 EPS CAGR(%). 이후 분기 이익은 분모에 섞지 않으며 종가의 7일 유효 범위를 점검합니다.')
         st.caption('린치 참고점: 고성장주 이익 성장 20~25% 선호, PER/성장률 0.5·1·2배 참고. 고정 합격선이나 매수 신호가 아닙니다.')
         if is_kis:
@@ -522,7 +538,7 @@ def lynch_results(saved,today):
         if not is_kis:
             for index,url in enumerate(dict.fromkeys(r['원문'] for r in evidence if r['원문']),1):st.link_button(f'DART 공시 원문 {index}',url)
         st.caption('차입금은 부채총계와 다릅니다. 누락·중복 계정은 추정하지 않고 미확인으로 둡니다. 단기 금융상품과 리스부채는 이번 범위에서 제외합니다.')
-        reasons=list(result['growth_gaps'])+list(data.get('data_gaps',[]))
+        reasons=list(result['growth_gaps'])+list(data.get('data_gaps',[]))+list(result.get('data_gaps',[]))
         reasons += [result.get('price_gap'),quote.get('error'),quote.get('closing_gap'),quote.get('refresh_error'),saved.get('dart_error')]
         reasons += [st.session_state.get('lynch_data_'+data['code']+suffix) for suffix in ('_error','_price_error')]
         for b in balances:
