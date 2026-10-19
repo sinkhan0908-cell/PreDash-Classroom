@@ -97,7 +97,9 @@ class FinancialStoreTests(unittest.TestCase):
     def test_price_refresh_reuses_financial_inputs_without_recollecting(self):
         import math,re
         ns={'datetime':datetime,'ZoneInfo':ZoneInfo,'math':math,'re':re,
-            'quote_with_fallback':Mock(return_value=(1700,'20261014','public','공공데이터포털')),'official_client':Mock()}
+            'api_key':lambda key:'configured','BrokerError':BrokerError,
+            'kis_reference_client':Mock(side_effect=BrokerError('not configured')),
+            'official_client':Mock(return_value=types.SimpleNamespace(price_history=Mock(return_value=[{'srtnCd':'005930','basDt':'20261014','clpr':1700}])))}
         node=next(n for n in ast.parse(Path('app.py').read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='lynch_refresh_price')
         exec(compile(ast.Module(body=[node],type_ignores=[]),'app.py','exec'),ns)
         result=ns['lynch_refresh_price'](self.saved,datetime(2026,10,15).date())

@@ -145,7 +145,8 @@ class TtmTests(unittest.TestCase):
         raw={'per':31.99,'peg':9.86,'cagr':3.244}
         result=describe(saved,raw,self.today)
         self.assertAlmostEqual(result['per'],9.318557971473673)
-        self.assertEqual(result['annual_per'],31.99);self.assertEqual(result['annual_peg'],9.86)
+        self.assertAlmostEqual(result['annual_per'],210000/6605)
+        self.assertAlmostEqual(result['annual_peg'],result['annual_per']/result['cagr'])
         self.assertEqual(result['primary_per_type'],'ttm');self.assertEqual(result['valuation_basis']['peg_label'],'연간 PER 기준 과거 PEG')
         other=deepcopy(saved);other['data']['code']='000660'
         self.assertIsNone(describe(other,raw,self.today)['per'])
@@ -210,7 +211,7 @@ class TtmTests(unittest.TestCase):
         exported=json.loads(st.download_button.call_args.args[1])
         self.assertEqual(exported['schema_version'],2)
         self.assertAlmostEqual(exported['analysis']['per'],9.318557971473673)
-        self.assertAlmostEqual(exported['analysis']['annual_per'],31.992687385740403)
+        self.assertAlmostEqual(exported['analysis']['annual_per'],210000/6605)
         self.assertEqual(exported['analysis']['valuation_basis']['per_type'],'ttm')
         self.assertEqual(exported['analysis']['valuation_basis']['annual_per_type'],'annual_eps')
         self.assertEqual(exported['financial']['rows'][-1]['value'],6564)

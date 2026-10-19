@@ -489,8 +489,9 @@ def lynch_results(saved,today):
     history=result['history'];latest=history[-1] if history else {}
     st.subheader('01  이익 성장')
     st.html(lynch_metrics([('EPS 4년 CAGR',lynch_number(result['cagr'],'%')),('최근 EPS 성장률',lynch_number(latest.get('growth'),'%'))]))
-    st.html(lynch_table(['연도','KIS EPS (원/주)' if is_kis else '기본 EPS (원/주)','전년 대비','변화'],[
+    st.html(lynch_table(['연도','적용 EPS (원/주)','전년 대비','변화'],[
         [r['year'],lynch_number(r['value'],digits=2),lynch_number(r['growth'],'%') if r['growth'] is not None else '—',r['note']] for r in history]))
+    if result.get('annual_eps_selection',{}).get('status')=='official_applied':st.caption('공식 연결 보통주 기본 EPS 적용 · 미확인 연도는 계산 제외')
     if result['growth_gaps']:st.caption('성장률 일부 계산 보류 · 사유는 분석 근거에서 확인하세요.')
     st.subheader('02  성장 대비 가격')
     suffix=' · 참고' if is_kis or crosscheck['status']=='numeric_mismatch' else ''
@@ -502,7 +503,9 @@ def lynch_results(saved,today):
     if saved.get('ttm',{}).get('last_error'):st.warning('최근 TTM 조회 실패 · 이전 성공 원자료로 계산합니다.')
     st.caption(f"분모: {valuation['annual_eps_year']}년 EPS {lynch_number(valuation['annual_eps_value'],'원',2)} · 최근 12개월(TTM)·예상 PER과 구분")
     if crosscheck['status']=='numeric_mismatch':
-        st.warning('EPS 공시 수치 불일치 · 연간 PER·PEG·성장률은 참고값입니다. 분석 근거에서 대조값과 출처를 확인하세요.')
+        st.warning('API EPS 공시 수치 불일치 · 실제 적용 EPS와 원자료 차이는 분석 근거에서 확인하세요.')
+    price_check=quote.get('crosscheck',{}).get('status','not_checked')
+    if price_check!='matched':st.caption({'mismatch':'종가 제공처 수치 불일치 · 공공 종가 우선 적용','date_mismatch':'종가 제공처 기준일 다름 · 공공 종가 우선 적용','single_source':'종가 단일 제공처 · 교차 대조 미완료','not_checked':'종가 교차 대조 미실시'}.get(price_check,'종가 확인 필요'))
     if result['price_gap'] or quote.get('error'):st.caption('가격 지표 일부 미확인 · 분석 근거에서 기준일과 사유를 확인하세요.')
     st.subheader('03  재무 상태')
     balances=data.get('lynch',{}).get('balances',[])
@@ -523,6 +526,16 @@ def lynch_results(saved,today):
         st.caption(st.session_state.get('lynch_storage_note_'+data['code'],'저장된 원자료로 계산합니다.'))
         st.caption('최근 5개 완료 사업연도 → 4년 CAGR. CAGR = [(마지막 EPS ÷ 처음 EPS)^(1/4) − 1] × 100. 양수 EPS·연속성·비교 가능성을 확인합니다. 계산 기간과 제한은 구현 설정입니다.')
         st.write('원문 대조: '+result['verification']['filing_crosscheck'])
+        selection=result.get('annual_eps_selection',{})
+        st.write('연간 EPS 적용: '+('공식 연결 보통주 기본 EPS 우선' if selection.get('status')=='official_applied' else '제공처 EPS · 정의 검증 미완료'))
+        if selection.get('status')=='official_applied':
+            st.dataframe([{'연도':r['year'],'API EPS':r.get('provider_value'),'계산 적용 EPS':r.get('value'),'원문 수집':r.get('fetched_at'),'출처':r.get('source')} for r in history],hide_index=True,use_container_width=True)
+        price_labels={'matched':'동일 기준일·종가 일치','mismatch':'동일 기준일·종가 불일치','date_mismatch':'제공처 기준일 다름','single_source':'단일 제공처 · 교차 대조 미완료','not_checked':'교차 대조 미실시'}
+        st.write('종가 대조: '+price_labels.get(price_check,'미확인'))
+        price_quotes=quote.get('crosscheck',{}).get('quotes',{})
+        if price_quotes:
+            st.dataframe([{'제공처':'공공데이터포털' if name=='public' else 'KIS 모의 시세','기준일':r['date'],'종가':r['close']} for name,r in price_quotes.items()],hide_index=True,use_container_width=True)
+        for reason in saved.get('ttm',{}).get('annual_eps_errors',[]):st.caption('연간 EPS 수집 미완료 · '+reason)
         st.caption('API 조회 성공·변경 없음은 제공처 응답 확인이며 공시 원문 검증 완료를 뜻하지 않습니다. 원문 대조는 아래 확인일에 한정합니다.')
         st.write(f"PER 분모: {valuation['annual_eps_year']}년 EPS {valuation['annual_eps_value']}원 · {valuation['annual_eps_definition']}")
         st.write(f"PEG: {valuation['annual_per_label']} ÷ {valuation['growth_start_year']}~{valuation['growth_end_year']}년 EPS CAGR(%)")
@@ -537,11 +550,11 @@ def lynch_results(saved,today):
         if crosscheck['comparisons']:
             st.dataframe([{'연도':r['year'],'API EPS':r['provider_eps'],'공시 기본 EPS':r['reference_eps'],'차이 (원/주)':r['difference'],'판정':'수치 불일치' if r['status']=='numeric_mismatch' else '수치 일치 · 정의 별도 확인','원문 확인일':r['checked_on'],'원문 위치':r['source_location'],'출처':r['source']} for r in crosscheck['comparisons']],hide_index=True,use_container_width=True)
             for url in dict.fromkeys(r['source'] for r in crosscheck['comparisons']):st.link_button('EPS 대조 원문',url)
-        st.caption('KIS EPS 정의 차이·제공처 갱신 시점·정정 등 불일치 원인은 확인되지 않았습니다. API 수치를 공시 값으로 자동 덮어쓰지 않습니다.' if crosscheck['status']=='numeric_mismatch' else crosscheck['scope'])
+        st.caption('KIS EPS 정의 차이·제공처 갱신 시점·정정 등 불일치 원인은 확인되지 않았습니다. API 원자료는 보존하며, 계산에는 확보한 공식 연결 보통주 기본 EPS를 우선 적용합니다.' if crosscheck['status']=='numeric_mismatch' else crosscheck['scope'])
         st.caption('PER = 표시 가격 ÷ 최근 연간 EPS. 과거 PEG = PER ÷ 4년 EPS CAGR(%). 이후 분기 이익은 분모에 섞지 않으며 종가의 7일 유효 범위를 점검합니다.')
         st.caption('린치 참고점: 고성장주 이익 성장 20~25% 선호, PER/성장률 0.5·1·2배 참고. 고정 합격선이나 매수 신호가 아닙니다.')
         if is_kis:
-            st.write('KIS 참고 계산 · 연결/별도·기본/희석 EPS와 분할 조정 기준은 DART 원문과 미대조입니다. 전략 적합 판정은 하지 않습니다.')
+            st.write('API 원자료는 KIS 참고값입니다. 공식 EPS 적용 여부와 미확인 연도는 위 적용 내역을 따릅니다. 전략 적합 판정은 하지 않습니다.')
             st.caption('현재가 응답의 결산월과 일치하는 완료 결산연도만 사용합니다. 회계연도 변경 이력은 미검증입니다.')
             st.caption('계산 제외 기간: '+(', '.join(saved.get('excluded_periods',[])) or '없음'))
             st.link_button('KIS 공식 재무비율 API','https://github.com/koreainvestment/open-trading-api/tree/main/examples_llm/domestic_stock/finance_financial_ratio')
@@ -595,26 +608,12 @@ def lynch_save_remote(code, saved=None, failed=False, kind='financial', freshnes
 
 
 def lynch_refresh_price(saved, today):
-    code=saved['data']['code']
-    if saved.get('source')=='KIS':
-        rows=kis_reference_client().price_history(code,today)
-        valid=[]
-        for row in rows:
-            day=str(row.get('basDt',''))
-            try:
-                parsed=datetime.strptime(day,'%Y%m%d').date()
-                value=float(str(row.get('clpr','')).replace(',',''))
-            except (ValueError,TypeError):continue
-            if parsed<today and value>0 and math.isfinite(value):valid.append((parsed,value))
-        if not valid:raise BrokerError('이전 거래일 종가 미확인')
-        parsed,close=max(valid)
-        quote={'close':close,'date':parsed.isoformat(),'source':'KIS 모의 일별 시세','kind':'종가'}
-    else:
-        close,day,_,source=quote_with_fallback(code,official_client(),today)
-        day=str(day)
-        if re.fullmatch(r'\d{8}',day):day=f'{day[:4]}-{day[4:6]}-{day[6:]}'
-        quote={'close':close,'date':day,'source':source,'kind':'종가'}
-    quote['fetched_at']=datetime.now(ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds')
+    from predash.lynch_price import collect as collect_close
+    public=official_client().price_history if api_key('DATA_GO_KR_SERVICE_KEY') else None
+    try:
+        kis=kis_reference_client().price_history
+    except BrokerError:kis=None
+    quote=collect_close(saved['data']['code'],today,public=public,kis=kis)
     return {**saved,'quote':quote}
 
 
@@ -660,6 +659,12 @@ def lynch_ttm_refresh(code,today,force=False):
     try:
         with st.spinner('공식 자료로 최근 12개월 PER을 확인합니다…'):
             block=collect_ttm(None if code=='005930' else official_client(),code,today)
+            if block.get('annual_eps_errors') and old and old.get('code')==code:
+                present={r['period_end'] for r in block.get('annual_eps',[])}
+                retained=[r for r in old.get('annual_eps',[]) if r.get('period_end') not in present]
+                if retained:
+                    block['annual_eps']=block.get('annual_eps',[])+retained
+                    block['annual_eps_errors'].append('일부 연도 재조회 실패 · 이전 성공 원자료와 수집 시각 유지')
     except (TtmError,DataError,ValueError) as exc:
         block={**old,'last_error':str(exc),'last_attempt_at':at} if old and old.get('status')=='success' else {'version':1,'status':'failed','code':code,'reason':str(exc),'last_attempt_at':at}
     st.session_state[key]={**saved,'ttm':block}
@@ -750,6 +755,11 @@ def lynch_page():
                 except (BrokerError,ValueError) as kis_exc:
                     st.session_state[key+'_error']=str(exc)+' · KIS 대체 조회: '+str(kis_exc)
     if full_refresh:
+        if not st.session_state.get(key+'_error') and st.session_state.get(key):
+            try:
+                st.session_state[key]=lynch_refresh_price(st.session_state[key],today)
+            except (BrokerError,DataError,ValueError) as exc:
+                st.session_state[key]['quote']={'error':str(exc),'crosscheck':{'status':'not_checked','error':str(exc)}}
         if not st.session_state.get(key+'_error') and st.session_state.get(key):
             try:check_financial_snapshot(st.session_state[key])
             except StorageError as exc:

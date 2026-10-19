@@ -140,15 +140,18 @@ def parse_samsung(pages,year,quarter,url,digest,today):
     sections=[]
     for i,page in enumerate(pages):
         compact=' '.join(page.split())
-        m=re.search(r'Earnings per Share\s+Earnings per share for the',compact,re.I)
+        m=re.search(r'Earnings per Share\s+(?:Earnings per share for the|\(A\)\s*Basic earnings per share)',compact,re.I)
         if not m:continue
         block=' '.join((' '.join(pages[i:i+2])).split())[m.start():]
         eps_context=block
         basic=re.search(r'\(A\)\s*Ordinary shares\s*\(1\)\s*Basic earnings per share(.*?)(?:\(2\)\s*Diluted|\(B\)\s*Preference)',block,re.I)
         if basic:sections.append((i+1,basic.group(1),eps_context))
+        elif quarter==4:
+            legacy=re.search(r'\(A\)\s*Basic earnings per share.*?\(1\)\s*Ordinary shares(.*?)\(2\)\s*Preference shares',block,re.I)
+            if legacy:sections.append((i+1,legacy.group(1),eps_context))
     if len(sections)!=1:raise TtmError('보통주 기본 EPS 주석 위치·중복 확인 필요')
     page,block,eps_context=sections[0]
-    if not re.search(r'millions of Korean won and thousands of (?:number of )?shares',block,re.I):raise TtmError('EPS 주석 금액·주식수 단위 미확인')
+    if not re.search(r'millions of Korean won(?: and|,) thousands of (?:number of )?shares',block,re.I):raise TtmError('EPS 주석 금액·주식수 단위 미확인')
     if not re.search(rf'\b{year}\s+{year-1}\b',block):raise TtmError('EPS 주석 비교연도 불일치')
     flags=bool(re.search(r'(share split|stock split|bonus issue|retrospectively adjust)',eps_context,re.I))
     def values(label):
@@ -158,7 +161,7 @@ def parse_samsung(pages,year,quarter,url,digest,today):
         expected=2 if quarter in (1,4) else 4
         if len(nums)!=expected or any(v is None for v in nums):raise TtmError('EPS 주석 숫자 열 개수 불일치')
         return nums
-    profits=values(r'Profit for the (?:year|period) attributable to ordinary shares')
+    profits=values(r'Profit for the (?:year|period) (?:attributable to|available for) ordinary shares')
     shares=values(r'Weighted-average number of ordinary shares outstanding')
     eps=values(r'Basic earnings per ordinary share \(in Korean won\)')
     # Interim report headers must explicitly identify current/prior cumulative columns.
@@ -208,6 +211,7 @@ def collect_samsung(today,download=download_pdf,extract=pdf_text,listed=None):
             url=ROOT+f'{y}_con_quarter0{q}_all.pdf'
             body=download(url)
             cache[y,q]=parse_samsung(extract(body),y,q,url,hashlib.sha256(body).hexdigest(),today)
+            for row in cache[y,q]:row['fetched_at']=now()
         return cache[y,q]
     listed=listed_samsung_reports() if listed is None else listed
     for y,q in sorted(listed,reverse=True):
@@ -215,7 +219,21 @@ def collect_samsung(today,download=download_pdf,extract=pdf_text,listed=None):
         current,prior=report(y,q)
         if q!=4 and (y-1,4) not in listed:raise TtmError('공식 IR 목록의 전년도 연간 보고서 미확인')
         inputs=[current] if q==4 else [report(y-1,4)[0],current,prior]
-        return {'version':VERSION,'status':'success','code':'005930','inputs':inputs,'source_route':'Samsung official IR PDF',
+        annual_eps=[];annual_errors=[]
+        end_year=date.fromisoformat(inputs[0]['period_end']).year
+        for target in range(end_year,end_year-4,-1):
+            try:
+                if (target,4) not in listed:raise TtmError('공식 IR 목록에 연간 보고서 없음')
+                annual_eps.extend(report(target,4))
+            except TtmError as exc:annual_errors.append(f'{target}년: {exc}')
+        conflicts=[]
+        for target in range(end_year-4,end_year):
+            duplicates=[r for r in annual_eps if r['period_end']==f'{target}-12-31']
+            if len({r['reported_eps'] for r in duplicates})>1:conflicts.append(f'{target}년 인접 공시 EPS 비교값 불일치 · 재작성 확인 필요')
+        return {'version':VERSION,'status':'success','code':'005930','inputs':inputs,
+            'annual_comparability_gaps':conflicts,
+            'annual_eps':[r for r in annual_eps if end_year-4<=date.fromisoformat(r['period_end']).year<=end_year],
+            'annual_eps_errors':annual_errors,'source_route':'Samsung official IR PDF',
             'fetched_at':now(),'last_attempt_at':now(),'listing_source':INDEX,
             'latest_scope':'공식 IR 목록에 실제 연결된 완료 기간 보고서 중 최신 자료 · 접근 실패 시 과거 보고서로 자동 하향하지 않음'}
     raise TtmError('최근 2개 사업연도 공식 EPS 주석 미확인')
