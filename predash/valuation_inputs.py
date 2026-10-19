@@ -7,7 +7,7 @@ from predash.lynch import analyse
 
 def official_annual(saved, today):
     block=saved.get('ttm') or {}
-    if block.get('code')!=saved['data']['code'] or block.get('status')!='success':return {}
+    if block.get('code')!=saved['data']['code'] or (block.get('status')!='success' and block.get('annual_eps_status')!='success'):return {}
     candidates=list(block.get('annual_eps',[]))+list(block.get('inputs',[])[:1])
     accepted={}
     for row in candidates:
@@ -52,5 +52,5 @@ def apply_annual(saved, result, today):
         recalculated['growth_gaps'].append('공식 연결 보통주 기본 EPS 5개 연도 확인 필요 · KIS 값과 혼합하지 않음')
     merged={**result,**recalculated}
     return merged, {'status':'official_applied','years':sorted(official),
-                    'source_fetched_at':saved['ttm'].get('fetched_at'),
+                    'source_fetched_at':saved['ttm'].get('annual_source_fetched_at',saved['ttm'].get('fetched_at')),
                     'scope':'공식 연결 보통주 기본 EPS 우선 · API 원자료 보존 · 미확인 연도는 성장률 계산 제외'}

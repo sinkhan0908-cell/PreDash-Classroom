@@ -92,13 +92,13 @@ def dart_error(code):
 def get(url, params):
     path = urlsplit(url).path
     labels = {"corpCode.xml": "DART 기업명·종목코드 목록", "document.xml": "DART 사업보고서 원문",
-              "company.json": "DART 기업개황", "company.xml": "DART 기업개황(XML)", "fnlttSinglAcntAll.json": "DART 결산 실적", "list.json": "DART 공시 목록"}
+              "fnlttXbrl.xml": "DART XBRL 원문", "company.json": "DART 기업개황", "company.xml": "DART 기업개황(XML)", "fnlttSinglAcntAll.json": "DART 결산 실적", "list.json": "DART 공시 목록"}
     label = labels.get(path.rsplit("/",1)[-1], "공공데이터포털 주식시세")
     for attempt in range(2):
         started = time.monotonic()
         _NETWORK_LOG.info('service=%s attempt=%d event=start', label, attempt + 1)
         try:
-            r = requests.get(url, params=params, timeout=(10,60) if path.endswith(("corpCode.xml","document.xml")) else (10,30))
+            r = requests.get(url, params=params, timeout=(10,60) if path.endswith(("corpCode.xml","document.xml","fnlttXbrl.xml")) else (4,12) if path.endswith(('company.json','company.xml')) else (10,30))
             _NETWORK_LOG.info('service=%s attempt=%d event=response http=%d elapsed_s=%.2f', label, attempt + 1, r.status_code, time.monotonic() - started)
             if r.status_code in (502,503,504) and attempt == 0:
                 continue
@@ -186,7 +186,7 @@ class Official:
                 # Same official company API, alternate documented serialization.
                 # Authentication / quota / identity errors must never trigger fallback.
                 transient = any(text in str(exc) for text in ('응답 시간이 초과', '서버에 연결하지 못', 'HTTP 502', 'HTTP 503', 'HTTP 504'))
-                if not company or not transient:
+                if not company or not transient or '[CONNECT_TIMEOUT]' in str(exc):
                     raise
                 try:
                     xml = get('https://opendart.fss.or.kr/api/company.xml', {'crtfc_key':self.dart_key, **params})

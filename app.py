@@ -500,6 +500,7 @@ def lynch_results(saved,today):
         st.caption(f"TTM 기간: {result['ttm']['period_start']} ~ {result['ttm']['period_end']} · 공시 순이익·주식수로 재구성한 참고 계산")
     if result['ttm']['per'] is None:
         st.caption('최근 12개월 PER 미확인 · '+result['ttm']['data_gaps'][0])
+    if saved.get('ttm',{}).get('annual_eps_status')=='success' and saved.get('ttm',{}).get('status')!='success':st.caption('공식 연간 EPS 적용 · 최근 누적 실적 미확보로 TTM은 미확인')
     if saved.get('ttm',{}).get('last_error'):st.warning('최근 TTM 조회 실패 · 이전 성공 원자료로 계산합니다.')
     st.caption(f"분모: {valuation['annual_eps_year']}년 EPS {lynch_number(valuation['annual_eps_value'],'원',2)} · 최근 12개월(TTM)·예상 PER과 구분")
     if crosscheck['status']=='numeric_mismatch':
@@ -535,6 +536,9 @@ def lynch_results(saved,today):
         price_quotes=quote.get('crosscheck',{}).get('quotes',{})
         if price_quotes:
             st.dataframe([{'제공처':'공공데이터포털' if name=='public' else 'KIS 모의 시세','기준일':r['date'],'종가':r['close']} for name,r in price_quotes.items()],hide_index=True,use_container_width=True)
+        if saved.get('ttm',{}).get('dart_error'):st.caption('DART 수집 사유: '+saved['ttm']['dart_error'])
+        if saved.get('ttm',{}).get('xbrl_error'):st.caption('XBRL 수집 사유: '+saved['ttm']['xbrl_error'])
+        if saved.get('ttm',{}).get('latest_scope'):st.caption(saved['ttm']['latest_scope'])
         for reason in saved.get('ttm',{}).get('annual_eps_errors',[]):st.caption('연간 EPS 수집 미완료 · '+reason)
         st.caption('API 조회 성공·변경 없음은 제공처 응답 확인이며 공시 원문 검증 완료를 뜻하지 않습니다. 원문 대조는 아래 확인일에 한정합니다.')
         st.write(f"PER 분모: {valuation['annual_eps_year']}년 EPS {valuation['annual_eps_value']}원 · {valuation['annual_eps_definition']}")
@@ -659,11 +663,16 @@ def lynch_ttm_refresh(code,today,force=False):
     try:
         with st.spinner('공식 자료로 최근 12개월 PER을 확인합니다…'):
             block=collect_ttm(None if code=='005930' else official_client(),code,today)
+            if block.get('status')!='success' and old and old.get('status')=='success' and old.get('code')==code:
+                annual={k:v for k,v in block.items() if k.startswith('annual_')}
+                block={**old,**annual,'last_error':block.get('reason','최근 TTM 확인 실패'),
+                    'last_attempt_at':at,'annual_source_fetched_at':block.get('fetched_at')}
             if block.get('annual_eps_errors') and old and old.get('code')==code:
                 present={r['period_end'] for r in block.get('annual_eps',[])}
                 retained=[r for r in old.get('annual_eps',[]) if r.get('period_end') not in present]
                 if retained:
                     block['annual_eps']=block.get('annual_eps',[])+retained
+                    block['annual_comparability_gaps']=list(dict.fromkeys(block.get('annual_comparability_gaps',[])+old.get('annual_comparability_gaps',[])))
                     block['annual_eps_errors'].append('일부 연도 재조회 실패 · 이전 성공 원자료와 수집 시각 유지')
     except (TtmError,DataError,ValueError) as exc:
         block={**old,'last_error':str(exc),'last_attempt_at':at} if old and old.get('status')=='success' else {'version':1,'status':'failed','code':code,'reason':str(exc),'last_attempt_at':at}

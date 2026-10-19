@@ -283,7 +283,23 @@ def collect_dart(provider,code,today):
 
 
 def collect(provider,code,today):
-    block=collect_samsung(today) if code=='005930' else collect_dart(provider,code,today)
+    if code=='005930':
+        block=collect_samsung(today)
+    else:
+        from predash.official import DataError
+        try:block=collect_dart(provider,code,today)
+        except (TtmError,DataError) as exc:
+            if code!='214450':raise
+            from predash.pharma_ir import collect as collect_ir
+            try:block=collect_ir(today)
+            except TtmError as ir_error:raise TtmError(str(exc)+' · 공식 IR: '+str(ir_error)) from None
+            block['dart_error']=str(exc)
+            from predash.dart_xbrl import collect as collect_xbrl
+            try:block=collect_xbrl(provider,today,block)
+            except (TtmError,DataError) as xbrl_error:block['xbrl_error']=str(xbrl_error)
+            except (ValueError,TypeError,KeyError):block['xbrl_error']='DART XBRL 목록·원문 형식 확인 필요'
+            # This independently verified annual result is useful even without an interim TTM.
+            return block
     # Validate financial identities independent of the user's displayed quote.
     check=calculate(block,{'close':1,'date':today.isoformat(),'source':'validation'},today)
     hard=[r for r in check['data_gaps'] if not r.startswith(('공시의 반올림','IR 보고서 작성일')) and '0·적자' not in r]
