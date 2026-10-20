@@ -14,7 +14,7 @@ from xml.etree import ElementTree as ET
 from predash.ttm import TtmError,VERSION,now,calculate
 from predash.company_codes import company_name_key
 
-READER_VERSION=2
+READER_VERSION=3
 
 X='http://www.xbrl.org/2003/instance'
 D='http://xbrl.org/2006/xbrldi'
@@ -64,7 +64,9 @@ def parse(body,periods,receipt,today):
             # No default-context inference, segment totals, diluted or preference members.
             allowed={('ConsolidatedAndSeparateFinancialStatementsAxis','ConsolidatedMember'),
                      ('ClassesOfShareCapitalAxis','OrdinarySharesMember')}
-            if not pairs or any(p not in allowed for p in pairs) or not any(p[0]=='ConsolidatedAndSeparateFinancialStatementsAxis' for p in pairs):continue
+            # All three inputs must belong to the same explicit ordinary-share scope.
+            # Unclassified statement EPS can differ from the ordinary-share note.
+            if len(pairs)!=2 or set(pairs)!=allowed:continue
             if context.findall('.//{'+D+'}typedMember'):continue
             entities.add((ident.get('scheme'),ident.text.strip()))
             if context.get('id') in contexts:raise TtmError('XBRL 기간 식별자 중복')
@@ -98,6 +100,7 @@ def parse(body,periods,receipt,today):
         if row['weighted_shares']<=0 or abs(row['profit']/row['weighted_shares']-row['reported_eps'])>1.1:raise TtmError('XBRL 순이익·주식수·EPS 대조 불일치')
         row.update(period_start=start,period_end=end,basis='CFS',currency='KRW',definition='ordinary_basic',
             source='https://dart.fss.or.kr/dsaf001/main.do?rcpNo='+receipt,receipt=receipt,
+            context_scope='explicit_consolidated_ordinary_shares',
             source_location='XBRL 연결·보통주 기본 EPS 기간별 표준 계정',document_sha256=hashlib.sha256(body).hexdigest(),
             available_on=available.isoformat(),available_on_type='filing_receipt_date',fetched_at=now())
         rows.append(row)
