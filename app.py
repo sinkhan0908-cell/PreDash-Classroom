@@ -331,6 +331,11 @@ def cloud_apply(snapshot, force=False):
     st.session_state['_cloud_snapshot']=snapshot
     st.session_state['_cloud_error']=None
     st.session_state['_cloud_dirty']=False
+    if force:
+        # Explicit reload must also restore financial data collected by another device.
+        for saved_key in list(st.session_state):
+            if saved_key.startswith(('lynch_data_', 'lynch_freshness_')):
+                st.session_state.pop(saved_key, None)
     if codes or not local or force:
         st.session_state['watch_codes']=codes
         st.session_state['watch_names']=names
