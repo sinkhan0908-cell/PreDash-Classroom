@@ -51,13 +51,13 @@ class CompactLynchTests(unittest.TestCase):
         ns['lynch_update_saved']('005930',date(2026,10,16))
         self.assertEqual(self.st.session_state['lynch_data_005930']['quote']['close'],1800)
         self.assertEqual(self.st.session_state['lynch_freshness_005930_DART']['status'],'failed')
-    def test_page_has_one_action_uses_cache_and_does_not_check_twice(self):
+    def test_main_refresh_uses_cache_and_does_not_check_twice(self):
         self.st.columns.return_value=[MagicMock(),MagicMock()];self.st.query_params={}
-        self.st.selectbox.return_value='005930';self.st.button.return_value=True
+        self.st.selectbox.return_value='005930';self.st.button.side_effect=[True,False]
         ns=functions(['lynch_page'],dict(lynch_ttm_refresh=Mock(return_value=False),st=self.st,LYNCH_PAGE_STYLE=PAGE_STYLE,clean_codes=lambda c:[x for x in c if x],datetime=datetime,ZoneInfo=ZoneInfo,
             lynch_restore_saved=Mock(),lynch_update_saved=Mock(),lynch_status=Mock(),lynch_results=Mock(),lynch_freshness_panel=Mock()))
         ns['lynch_page']()
-        self.st.button.assert_called_once();self.assertEqual(self.st.button.call_args.args[0],'최신 자료 확인')
+        self.assertEqual([c.args[0] for c in self.st.button.call_args_list],['최신 자료 확인','종가 새로고침'])
         ns['lynch_update_saved'].assert_called_once();ns['lynch_freshness_panel'].assert_not_called();ns['lynch_results'].assert_called_once()
     def test_collapsed_evidence_and_settings_preserve_export_and_unknown_balances(self):
         ns=functions(['lynch_results','lynch_options'],dict(describe_lynch_valuation=describe_lynch_valuation,st=self.st,json=json,analyse_lynch=analyse,lynch_metrics=metrics,lynch_table=table,lynch_number=number,
@@ -65,6 +65,7 @@ class CompactLynchTests(unittest.TestCase):
         ns['lynch_results'](self.saved,date(2026,10,16))
         self.assertEqual([c.args[0] for c in self.st.expander.call_args_list],['분석 근거 보기','고급 설정'])
         self.assertTrue(all(c.kwargs['expanded'] is False for c in self.st.expander.call_args_list))
+        self.assertTrue(any('종가 기준일: 2026-10-15' in str(c) for c in self.st.caption.call_args_list))
         export=json.loads(self.st.download_button.call_args.args[1]);self.assertEqual(export['financial'],self.saved['data'])
         self.assertTrue(any('현금·차입금 미확인' in str(c) for c in self.st.info.call_args_list))
     def test_html_escapes_external_text_and_unknown_is_not_zero(self):

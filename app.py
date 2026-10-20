@@ -506,6 +506,8 @@ def lynch_results(saved,today):
     st.subheader('02  성장 대비 가격')
     suffix=' · 참고' if is_kis or crosscheck['status']=='numeric_mismatch' else ''
     st.html(lynch_metrics([('최근 12개월 PER · 공시 재구성',lynch_number(result['ttm']['per'],'배',2)),(valuation['annual_per_label']+suffix,lynch_number(result['annual_per'],'배')),(quote.get('kind','종가'),lynch_number(quote.get('close'),'원',0)),(valuation['peg_label']+suffix,lynch_number(result['annual_peg'],'배',2))]))
+    st.caption(f"{quote.get('kind','종가')} 기준일: {quote.get('date','미확인')} · 출처: {quote.get('source','미확인')} · 조회 시각: {quote.get('fetched_at','미확인')}")
+    st.caption('당일 종가는 한국시간 16:40 이후 제공처의 일별 응답이 있을 때 반영합니다. 이전 날짜가 표시되면 그 날짜의 가격으로 계산합니다.')
     if result['ttm']['eps'] is not None:
         st.caption('최근 12개월 EPS: '+lynch_number(result['ttm']['eps'],'원',2))
     if result['ttm']['period_end']:
@@ -518,7 +520,7 @@ def lynch_results(saved,today):
     if crosscheck['status']=='numeric_mismatch':
         st.warning('API EPS 공시 수치 불일치 · 실제 적용 EPS와 원자료 차이는 분석 근거에서 확인하세요.')
     price_check=quote.get('crosscheck',{}).get('status','not_checked')
-    if price_check!='matched':st.caption({'mismatch':'종가 제공처 수치 불일치 · 공공 종가 우선 적용','date_mismatch':'종가 제공처 기준일 다름 · 공공 종가 우선 적용','single_source':'종가 단일 제공처 · 교차 대조 미완료','not_checked':'종가 교차 대조 미실시'}.get(price_check,'종가 확인 필요'))
+    if price_check!='matched':st.caption({'mismatch':'종가 제공처 수치 불일치 · 공공 종가 우선 적용','date_mismatch':'종가 제공처 기준일 다름 · 더 최근 기준일 선택','single_source':'종가 단일 제공처 · 교차 대조 미완료','not_checked':'종가 교차 대조 미실시'}.get(price_check,'종가 확인 필요'))
     if result['price_gap'] or quote.get('error'):st.caption('가격 지표 일부 미확인 · 분석 근거에서 기준일과 사유를 확인하세요.')
     st.subheader('03  재무 상태')
     balances=data.get('lynch',{}).get('balances',[])
@@ -629,13 +631,38 @@ def lynch_save_remote(code, saved=None, failed=False, kind='financial', freshnes
 
 
 def lynch_refresh_price(saved, today):
-    from predash.lynch_price import collect as collect_close
+    import importlib
+    import predash.lynch_price as price_module
+    if getattr(price_module,'PRICE_VERSION',0)<1:
+        price_module=importlib.reload(price_module)
+    collect_close=price_module.collect
     public=official_client().price_history if api_key('DATA_GO_KR_SERVICE_KEY') else None
     try:
         kis=kis_reference_client().price_history
     except BrokerError:kis=None
     quote=collect_close(saved['data']['code'],today,public=public,kis=kis)
     return {**saved,'quote':quote}
+
+
+
+def lynch_update_price_only(code,today):
+    key='lynch_data_'+code
+    saved=st.session_state.get(key)
+    if not saved:return
+    try:
+        with st.spinner('종가와 기준일을 확인합니다…'):
+            updated=lynch_refresh_price(saved,today)
+            quote=updated['quote']
+            gap,_=financial_validation_module.quote_date_check(today.isoformat(),quote.get('date'))
+            if gap:raise DataError(gap)
+            if saved.get('quote',{}).get('date') and quote['date']<saved['quote']['date']:
+                raise DataError('새 응답의 종가 기준일이 이전 저장본보다 오래되어 기존 종가를 유지합니다.')
+            st.session_state[key]=updated
+            st.session_state.pop(key+'_price_error',None)
+            lynch_save_remote(code,updated,kind='price')
+    except (BrokerError,DataError,ValueError,TypeError,KeyError) as exc:
+        st.session_state[key+'_price_error']=str(exc)
+        lynch_save_remote(code,failed=True,kind='price')
 
 
 def lynch_freshness_panel(code,saved,today,manual=False,automatic=None,rerun=True):
@@ -762,6 +789,9 @@ def lynch_page():
     with action_column:
         st.caption(' ')
         refresh_requested=st.button('PC 저장자료 불러오기' if code=='214450' else '최신 자료 확인', type='primary', key='lynch_refresh',use_container_width=True)
+        price_requested=st.button('종가 새로고침',key='lynch_price_refresh',disabled=not previous_saved,use_container_width=True)
+    if price_requested:
+        lynch_update_price_only(code,today)
     if refresh_requested and code=='214450':
         try:
             with st.spinner('PC 저장자료를 불러옵니다…'):
@@ -835,6 +865,7 @@ def lynch_page():
             return
     if st.session_state.get(key+'_price_error'):
         st.warning('가격 조회 실패 · 이전 가격과 기준일을 유지합니다.')
+        st.caption(st.session_state[key+'_price_error'])
     if not saved:
         st.info('PC 수집기로 자료를 저장한 뒤 PC 저장자료 불러오기를 누르세요.' if code=='214450' else '최신 자료 확인을 눌러 분석을 시작하세요.')
         lynch_options(code)
@@ -846,7 +877,7 @@ def lynch_page():
     with status_slot.container():lynch_status(code,saved)
     if saved.get('source')=='KIS':kis_lynch_result(saved,today)
     else:lynch_results(saved,today)
-    if not refresh_requested and code!='214450':
+    if not refresh_requested and not price_requested and code!='214450':
         if not error:lynch_freshness_panel(code,saved,today)
         with status_slot.container():lynch_status(code,st.session_state.get(key,saved))
         if st.session_state.get('lynch_auto_'+code,True) and lynch_ttm_refresh(code,today):st.rerun()

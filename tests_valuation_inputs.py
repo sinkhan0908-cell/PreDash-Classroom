@@ -84,7 +84,7 @@ class PriceCrosscheckTests(unittest.TestCase):
         public=self.loader();q=collect('005930',self.today,public,None)
         self.assertEqual(q['crosscheck']['status'],'single_source')
         q=collect('005930',self.today,self.loader(day='20261015'),self.loader())
-        self.assertEqual(q['crosscheck']['status'],'date_mismatch');self.assertEqual(q['date'],'2026-10-15')
+        self.assertEqual(q['crosscheck']['status'],'date_mismatch');self.assertEqual(q['date'],'2026-10-16');self.assertEqual(q['crosscheck']['selected'],'kis')
     def test_public_failure_uses_explicit_unverified_kis_fallback(self):
         q=collect('005930',self.today,Mock(side_effect=DataError('timeout')),self.loader())
         self.assertEqual(q['source'],'KIS 모의 일별 시세');self.assertEqual(q['crosscheck']['status'],'single_source')

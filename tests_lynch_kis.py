@@ -51,7 +51,7 @@ class KisReferenceTests(unittest.TestCase):
     def test_real_page_dart_failure_falls_back_and_direct_path_skips_dart(self):
         for direct in (False,True):
             st=MagicMock();st.session_state={'watch_codes':['005930'],'watch_names':{},'lynch_kis_direct':direct};st.columns.return_value=[MagicMock(),MagicMock()];st.query_params={}
-            st.selectbox.return_value='005930';st.checkbox.return_value=direct;st.button.return_value=True
+            st.selectbox.return_value='005930';st.checkbox.return_value=direct;st.button.side_effect=[True,False]
             saved=build_reference(self.fixture(),datetime.now(ZoneInfo('Asia/Seoul')).date())
             dart=Mock(side_effect=DataError('기업개황 timeout'));fallback=Mock(return_value=saved);render=Mock()
             ns=dict(lynch_refresh_price=lambda saved,today:saved,lynch_ttm_refresh=Mock(return_value=False),LYNCH_PAGE_STYLE='',lynch_status=Mock(),lynch_freshness_panel=Mock(),check_financial_snapshot=Mock(),lynch_restore_saved=Mock(),lynch_save_remote=Mock(),st=st,clean_codes=lambda codes:[c for c in codes if c],datetime=datetime,ZoneInfo=ZoneInfo,
