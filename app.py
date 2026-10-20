@@ -476,11 +476,14 @@ def kis_lynch_result(saved, today):
 
 def lynch_options(code,saved=None,result=None,today=None):
     with st.expander('고급 설정',expanded=False):
-        st.checkbox('KIS로 직접 조회',value=False,key='lynch_kis_direct')
-        st.checkbox('재무자료 전체 다시 수집',value=False,key='lynch_force_full')
-        st.checkbox('새 자료 자동 확인',value=True,key='lynch_auto_'+code)
-        st.caption('설정을 바꾼 뒤 위의 최신 자료 확인을 누르세요. 기본은 DART 우선·실패 시 KIS입니다. 저장본이 있으면 같은 출처의 변경을 비교하며, 전체 다시 수집을 켜면 조회 경로를 새로 적용합니다.')
-        st.caption('자동 확인은 화면 이용 중 6시간 간격, 실패 시 15분 뒤 재시도합니다. 앱을 닫은 동안에는 실행하지 않습니다.')
+        if code=='214450':
+            st.caption('파마리서치는 PC 수집기로 공식 자료를 저장한 뒤 위의 PC 저장자료 불러오기를 누르세요. 수집 시각과 가격 기준일을 확인해 주세요.')
+        else:
+            st.checkbox('KIS로 직접 조회',value=False,key='lynch_kis_direct')
+            st.checkbox('재무자료 전체 다시 수집',value=False,key='lynch_force_full')
+            st.checkbox('새 자료 자동 확인',value=True,key='lynch_auto_'+code)
+            st.caption('설정을 바꾼 뒤 위의 최신 자료 확인을 누르세요. 기본은 DART 우선·실패 시 KIS입니다. 저장본이 있으면 같은 출처의 변경을 비교하며, 전체 다시 수집을 켜면 조회 경로를 새로 적용합니다.')
+            st.caption('자동 확인은 화면 이용 중 6시간 간격, 실패 시 15분 뒤 재시도합니다. 앱을 닫은 동안에는 실행하지 않습니다.')
         if saved and result:
             from predash.runtime import runtime_versions
             payload={'schema_version':2,'runtime_versions':runtime_versions(),'analysis':result,'financial':saved['data'],'evidence':saved}
@@ -503,6 +506,8 @@ def lynch_results(saved,today):
     st.subheader('02  성장 대비 가격')
     suffix=' · 참고' if is_kis or crosscheck['status']=='numeric_mismatch' else ''
     st.html(lynch_metrics([('최근 12개월 PER · 공시 재구성',lynch_number(result['ttm']['per'],'배',2)),(valuation['annual_per_label']+suffix,lynch_number(result['annual_per'],'배')),(quote.get('kind','종가'),lynch_number(quote.get('close'),'원',0)),(valuation['peg_label']+suffix,lynch_number(result['annual_peg'],'배',2))]))
+    if result['ttm']['eps'] is not None:
+        st.caption('최근 12개월 EPS: '+lynch_number(result['ttm']['eps'],'원',2))
     if result['ttm']['period_end']:
         st.caption(f"TTM 기간: {result['ttm']['period_start']} ~ {result['ttm']['period_end']} · 공시 순이익·주식수로 재구성한 참고 계산")
     if result['ttm']['per'] is None:
@@ -693,6 +698,23 @@ def lynch_ttm_refresh(code,today,force=False):
     return True
 
 
+
+def lynch_load_pc_snapshot(code):
+    client,_=cloud_client()
+    if client is None:raise StorageError('Supabase 연결 설정이 필요합니다.')
+    row=client.load()
+    saved=select_financial_snapshot(row['payload'],code)
+    if not saved:raise StorageError('PC 수집기로 자료를 저장한 뒤 다시 불러와 주세요.')
+    key='lynch_data_'+code
+    st.session_state[key]=saved
+    st.session_state.pop(key+'_error',None)
+    st.session_state.pop(key+'_price_error',None)
+    previous=st.session_state.get('_cloud_snapshot')
+    if not previous or previous['payload'].get('stocks')==row['payload'].get('stocks'):
+        st.session_state['_cloud_snapshot']=row
+    st.session_state['lynch_storage_note_'+code]='PC 저장자료를 Supabase에서 다시 읽었습니다.'
+
+
 def lynch_update_saved(code,today):
     key='lynch_data_'+code
     lynch_freshness_panel(code,st.session_state[key],today,manual=True,automatic=False,rerun=False)
@@ -739,7 +761,15 @@ def lynch_page():
     previous_saved=st.session_state.get(key)
     with action_column:
         st.caption(' ')
-        refresh_requested=st.button('최신 자료 확인', type='primary', key='lynch_refresh',use_container_width=True)
+        refresh_requested=st.button('PC 저장자료 불러오기' if code=='214450' else '최신 자료 확인', type='primary', key='lynch_refresh',use_container_width=True)
+    if refresh_requested and code=='214450':
+        try:
+            with st.spinner('PC 저장자료를 불러옵니다…'):
+                lynch_load_pc_snapshot(code)
+            previous_saved=st.session_state.get(key)
+        except StorageError as exc:
+            st.session_state[key+'_error']=str(exc)
+        refresh_requested=False
     full_refresh=refresh_requested and (not previous_saved or st.session_state.get('lynch_force_full',False) or (kis_direct and previous_saved.get('source')!='KIS'))
     if refresh_requested and not full_refresh:lynch_update_saved(code,today)
     if full_refresh:
@@ -806,7 +836,7 @@ def lynch_page():
     if st.session_state.get(key+'_price_error'):
         st.warning('가격 조회 실패 · 이전 가격과 기준일을 유지합니다.')
     if not saved:
-        st.info('최신 자료 확인을 눌러 분석을 시작하세요.')
+        st.info('PC 수집기로 자료를 저장한 뒤 PC 저장자료 불러오기를 누르세요.' if code=='214450' else '최신 자료 확인을 눌러 분석을 시작하세요.')
         lynch_options(code)
         return
     if full_refresh:
@@ -816,7 +846,7 @@ def lynch_page():
     with status_slot.container():lynch_status(code,saved)
     if saved.get('source')=='KIS':kis_lynch_result(saved,today)
     else:lynch_results(saved,today)
-    if not refresh_requested:
+    if not refresh_requested and code!='214450':
         if not error:lynch_freshness_panel(code,saved,today)
         with status_slot.container():lynch_status(code,st.session_state.get(key,saved))
         if st.session_state.get('lynch_auto_'+code,True) and lynch_ttm_refresh(code,today):st.rerun()

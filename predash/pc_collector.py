@@ -78,7 +78,7 @@ def main():
         checked = collect_and_save(CloudStore(url, secret), Official(dart_key=dart_key, price_key=''), code,
                                    datetime.now(ZoneInfo('Asia/Seoul')).date())
         print(f"Supabase 저장 성공: {code} / TTM EPS {checked['eps']:,.2f}원")
-        print('사이트 고급 설정에서 클라우드 연결 확인 · 목록 다시 불러오기를 눌러 주세요.')
+        print('사이트 파마리서치 분석에서 PC 저장자료 불러오기를 눌러 주세요.')
         return 0
     except (StorageError, DataError, ValueError) as exc:
         print(diagnostic(exc))
