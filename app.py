@@ -1095,7 +1095,7 @@ elif st.session_state.get('_cloud_snapshot'):
 @st.cache_data(ttl=1800,show_spinner=False)
 def cached_vix(day):return fetch_vix(day)
 if page in ('오늘의 점검','내 계좌','관심종목','투자 근거'):
-    with st.expander('매크로 · VIX 변동성 위험도',expanded=True):
+    with st.expander('매크로 · VIX 변동성 위험도',expanded=(page!='관심종목')):
         if st.button('VIX 새로고침'):cached_vix.clear()
         try:
             v=cached_vix(datetime.now(ZoneInfo('America/New_York')).date())
@@ -1331,8 +1331,7 @@ elif page=='전략 비교':
     st.stop()
 elif page=='관심종목':
     st.title('관심종목 점검')
-    st.html('<div class="pd-intro">저장한 종목의 추세·실적·수급을 한 화면에서 점검하세요.</div>')
-    st.caption('일별 종가: 공공데이터포털 · 동기 실적: OpenDART · 수급: KIS 연결 시 · 주문 기능 없음')
+    st.html('<div class="pd-intro">전체 새로고침으로 확인하고, 궁금한 종목은 자세히 보기를 누르세요.</div>')
     if not price_sources_ready():
         st.info('공공데이터포털 키 또는 KIS 모의투자 연결이 필요합니다.')
         st.stop()
@@ -1351,7 +1350,11 @@ elif page=='관심종목':
         st.session_state.watch_results={c:v for c,v in st.session_state.get('watch_results',{}).items() if c in st.session_state.watch_codes}
         st.session_state.watch_names=clean_names(st.session_state.get('watch_names',{}),st.session_state.watch_codes)
         cloud_save_current(st.session_state.watch_codes,st.session_state.watch_names)
-    with st.expander('종목 추가 · 백업 / 복원',expanded=not codes):
+    head,action=st.columns([4,1],vertical_alignment='center')
+    head.subheader(f'저장한 관심종목 {len(codes)}개')
+    refresh=action.button('전체 새로고침',type='primary',disabled=not codes,use_container_width=True)
+    show_validation=st.session_state.get('watch_show_validation',False)
+    with st.expander('종목 추가·삭제',expanded=not codes):
         with st.form('watch_lookup'):
             query=st.text_input('종목명 또는 종목코드',placeholder='예: 삼성전자 또는 005930',max_chars=40)
             submitted=st.form_submit_button('종목 찾기')
@@ -1375,21 +1378,12 @@ elif page=='관심종목':
                     st.session_state.watch_names[chosen]=next(p['name'] for p in candidates if p['code']==chosen)
                     save_watch(codes+[chosen])
                     st.rerun()
-        st.download_button('종목 목록 백업',data=export_backup(codes,st.session_state.get('watch_names',{})),file_name='predash-watchlist.json',
-                           mime='application/json',disabled=not codes)
-        uploaded=st.file_uploader('종목 목록 복원 (JSON)',type=['json'],key='watch_restore')
-        if uploaded and st.button('백업 목록 복원'):
-            try:
-                restored=uploaded.getvalue().decode('utf-8')
-                st.session_state.watch_names.update(backup_names(restored))
-                save_watch(restore_backup(restored))
-                st.session_state.pop('watch_name_attempts',None)
+        if codes:
+            remove_code=st.selectbox('삭제할 종목',codes,
+                format_func=lambda c:f"{st.session_state.watch_names.get(c,c)} · {c}",key='watch_remove_code')
+            if st.button('선택 종목 삭제',key='watch_remove_selected'):
+                save_watch([c for c in codes if c!=remove_code])
                 st.rerun()
-            except (ValueError,UnicodeDecodeError) as exc:st.error(str(exc))
-        st.caption('주소에는 종목코드만 저장되며, 종목명은 공식 조회로 복원됩니다. 백업 파일에는 코드와 종목명을 함께 보관합니다. 서버 세션이 끝나면 조회된 수치는 다시 불러와야 합니다.')
-    head,action=st.columns([4,1],vertical_alignment='center')
-    head.subheader(f'저장한 관심종목 {len(codes)}개')
-    refresh=action.button('목록 전체 새로고침',type='primary',disabled=not codes,use_container_width=True)
     if refresh:
         provider=official_client()
         today=datetime.now(ZoneInfo('Asia/Seoul')).date()
@@ -1415,16 +1409,17 @@ elif page=='관심종목':
                     if exact:st.session_state.watch_names[c]=exact['name']
                 except DataError:pass
         st.session_state.watch_name_attempts=list(attempted)
-    if not codes:st.info('종목을 추가하면 목록에 남습니다. 저장 후 목록 전체 새로고침을 눌러 자료를 확인하세요.')
-    elif not results:st.info('저장된 종목을 확인했습니다. 목록 전체 새로고침을 누르면 최신 공식 자료를 가져옵니다.')
+    if not codes:st.info('종목을 추가하면 목록에 남습니다. 저장 후 전체 새로고침을 눌러 자료를 확인하세요.')
+    elif not results:st.info('저장된 종목을 확인했습니다. 전체 새로고침을 누르면 최신 공식 자료를 가져옵니다.')
     for code in codes:
         item=results.get(code)
-        financial_validation_panel(code, 'watch', results.get(code))
+        if show_validation:
+            financial_validation_panel(code, 'watch', results.get(code))
         display_name=st.session_state.watch_names.get(code,code)
         if item and item.get('name')!=code:display_name=item['name']
         elif item:item['name']=display_name
         if not item:
-            st.html(f"<div class='pd-watch'><span class='pd-watch-name'>{html.escape(str(display_name))}</span><small>{code} · 조회 전 · 목록 전체 새로고침을 눌러주세요.</small></div>")
+            st.html(f"<div class='pd-watch'><span class='pd-watch-name'>{html.escape(str(display_name))}</span><small>{code} · 조회 전 · 전체 새로고침을 눌러주세요.</small></div>")
         else:
             lamp=item['lamp'];metrics=item['metrics'];flow=item['flow']
             state=lamp['state'] if lamp else '판정 보류'
@@ -1443,27 +1438,40 @@ elif page=='관심종목':
             st.html(f"<div class='pd-watch'><div class='pd-watch-top'><div><span class='pd-watch-name'>{name}</span><small>{code}</small></div>"
                 f"<div><small>일별 종가 · {price_date}</small><b>{price}</b><small><span class='pd-lamp {color}'></span>{state}</small></div>"
                 f"<div>{financial}</div><div><small>일별 수급 · {flow['date'] if flow else '보류'}</small>{flow_html}</div></div>"
-                f"<div class='pd-watch-bottom'><span>{averages}</span><span>자료 조회 {item['fetched']}</span><span>원문·세부 근거는 아래에서 확인</span></div></div>")
-            with st.expander(f"{item['name']} · 판단 그래프와 상세 근거"):
-                stock_evidence_charts(item)
-                st.write(f"종가 기준 {price_date} · KRX 일별 거래 {item['krx']['date'] if item['krx'] else '조회 보류'}")
-                if metrics:
-                    st.write(f"OpenDART {period} · 전년 동기 누적 영업이익 {metrics['prior_profit']:,.1f}억" if metrics['prior_profit'] is not None else f"OpenDART {period} · 전년 동기 수치 없음")
-                    if metrics['receipt']:st.link_button('실적 공시 원문',f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={metrics['receipt']}")
-                if flow:st.write(f"최근 {flow['sessions']}거래일 수급 합계 ({flow['from']}~{flow['date']}) · 외국인 {flow['five_day']['foreign']:+,}주 · 기관 {flow['five_day']['institution']:+,}주 · 개인 {flow['five_day']['individual']:+,}주")
-                if item['report'] and item['report'].get('disclosures'):
-                    d=item['report']['disclosures'][0];st.link_button(f"{d['date']} · {d['title']}",d['url'])
-                for source,reason in item['errors'].items():st.caption(f"{source} 보류 · {reason}")
+                f"<div class='pd-watch-bottom'><span>{averages}</span><span>자료 조회 {item['fetched']}</span><span>자세히 보기에서 추세·실적·수급 확인</span></div></div>")
+            if show_validation:
+                with st.expander(f"{item['name']} · 판단 그래프와 상세 근거"):
+                    stock_evidence_charts(item)
+                    st.write(f"종가 기준 {price_date} · KRX 일별 거래 {item['krx']['date'] if item['krx'] else '조회 보류'}")
+                    if metrics:
+                        st.write(f"OpenDART {period} · 전년 동기 누적 영업이익 {metrics['prior_profit']:,.1f}억" if metrics['prior_profit'] is not None else f"OpenDART {period} · 전년 동기 수치 없음")
+                        if metrics['receipt']:st.link_button('실적 공시 원문',f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={metrics['receipt']}")
+                    if flow:st.write(f"최근 {flow['sessions']}거래일 수급 합계 ({flow['from']}~{flow['date']}) · 외국인 {flow['five_day']['foreign']:+,}주 · 기관 {flow['five_day']['institution']:+,}주 · 개인 {flow['five_day']['individual']:+,}주")
+                    if item['report'] and item['report'].get('disclosures'):
+                        d=item['report']['disclosures'][0];st.link_button(f"{d['date']} · {d['title']}",d['url'])
+                    for source,reason in item['errors'].items():st.caption(f"{source} 보류 · {reason}")
         sector=st.session_state.get('industry_note_'+code,{})
         if sector.get('sector'):
             st.caption('섹터 조사 기록 · '+str(sector['sector'])+' · 사용자 기록, 자동 분류 아님')
-        else:st.caption('섹터 조사 미작성 · 투자 근거에서 산업·제품·HS코드·공시 근거를 연결하세요.')
-        actions=st.columns([4,1])
-        actions[0].button(f'{display_name} · 추세·실적·수급·섹터 조사',key='research_'+code,on_click=open_research,args=(code,),use_container_width=True)
-        remove=actions[1].button('목록에서 제거',key=f'remove_{code}',use_container_width=True)
-        if remove:
-            save_watch([c for c in codes if c!=code]);st.rerun()
+        st.button('자세히 보기',key='research_'+code,on_click=open_research,args=(code,),
+                  help='이 종목의 추세·실적·수급·섹터 조사 화면을 엽니다.',use_container_width=True)
     st.caption('빨강 = 양수·순매수, 파랑 = 음수·순매도. 일별 추세는 종가 기준이며 장중 신호가 아닙니다. 실적 증가율은 전년 동기 누적 비교입니다.')
+    with st.expander('고급 기능 · 백업·재무검증',expanded=False):
+        st.caption('일별 종가: 공공데이터포털 · 동기 실적: OpenDART · 수급: KIS 연결 시 · 주문 기능 없음')
+        st.checkbox('재무검증 도구 표시',value=False,key='watch_show_validation')
+        st.caption('체크하면 종목별 재무 조회·강제 재조회·조건 계산 도구가 표시됩니다.')
+        st.download_button('종목 목록 백업',data=export_backup(codes,st.session_state.get('watch_names',{})),file_name='predash-watchlist.json',
+                           mime='application/json',disabled=not codes)
+        uploaded=st.file_uploader('종목 목록 복원 (JSON)',type=['json'],key='watch_restore')
+        if uploaded and st.button('백업 목록 복원'):
+            try:
+                restored=uploaded.getvalue().decode('utf-8')
+                st.session_state.watch_names.update(backup_names(restored))
+                save_watch(restore_backup(restored))
+                st.session_state.pop('watch_name_attempts',None)
+                st.rerun()
+            except (ValueError,UnicodeDecodeError) as exc:st.error(str(exc))
+        st.caption('주소에는 종목코드만 저장되며, 종목명은 공식 조회로 복원됩니다. 백업 파일에는 코드와 종목명을 함께 보관합니다. 서버 세션이 끝나면 조회된 수치는 다시 불러와야 합니다.')
     st.stop()
 elif page=='투자 근거':
     st.title('종목의 투자 근거')
