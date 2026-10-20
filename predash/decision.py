@@ -3,6 +3,8 @@ import json
 from datetime import datetime
 from math import isfinite
 
+EVIDENCE_VERSION=2
+
 class EvidenceError(ValueError):pass
 
 def comparison(stock_rows,index_rows,code,today):
@@ -34,7 +36,7 @@ def brief(item):
         lines.append(f"{m['year']}년 {m['quarter']}분기 누적 매출 {m['revenue']:,.1f}억, 영업이익 {m['profit']:,.1f}억입니다.")
         if m.get('growth_pct') is not None:lines.append(f"전년 동기 누적 영업이익 증가율은 {m['growth_pct']:+.1f}%입니다.")
         else:lines.append('영업이익 증가율은 전년 동기 비교 조건 미충족으로 보류합니다.')
-    else:lines.append('실적 비교는 공식 자료 부족으로 보류합니다.')
+    else:lines.append('매출·영업이익 비교는 공식 자료 부족으로 보류합니다.')
     if flow:
         labels={'foreign':'외국인','institution':'기관','individual':'개인'}
         text=' · '.join(f"{labels[k]} {v:+,}주" for k,v in flow['daily'].items() if k in labels)
@@ -45,7 +47,7 @@ def brief(item):
 
 def export_review(item,comparison_rows,industry,market_name):
     return json.dumps({'schema':'predash-evidence-v1','code':item['code'],'name':item['name'],
-        'fetched':item['fetched'],'official_data':{k:item.get(k) for k in ('lamp','metrics','flow','krx','report','exports')},
+        'fetched':item['fetched'],'official_data':{k:item.get(k) for k in ('lamp','metrics','flow','krx','report','exports','financial_snapshot','pc_ttm')},
         'data_errors':item.get('errors',{}),'comparison':{'market':market_name,'base':100,'rows':comparison_rows},
         'industry_note':{'verification':'사용자 기록 · 자동 검증 아님',**industry},
         'brief':brief(item),'investment_score':None},ensure_ascii=False,indent=2)

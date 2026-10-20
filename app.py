@@ -79,7 +79,10 @@ import predash.flow as flow_module
 flow_module=importlib.reload(flow_module)
 from predash.dashboard import overview, latest_held_buy
 from predash.visuals import compact_dashboard
-from predash.decision import comparison, brief, export_review, EvidenceError
+import predash.decision as decision_module
+if getattr(decision_module,'EVIDENCE_VERSION',0)<2:
+    decision_module=importlib.reload(decision_module)
+comparison,brief,export_review,EvidenceError=decision_module.comparison,decision_module.brief,decision_module.export_review,decision_module.EvidenceError
 from predash.customs import exports, CustomsError
 from predash.krx import daily_activity, KRXError
 import predash.watchlist as watch_module
@@ -995,9 +998,25 @@ def quote_with_fallback(code,provider,today):
         raise DataError(f'공공데이터포털 보류 · {public_error} · KIS fallback 보류 · {exc}') from None
 
 
-def watch_fetch(code,provider,today):
+
+def pc_research_financial(code):
+    row=st.session_state.get('_cloud_snapshot')
+    saved=select_financial_snapshot(row['payload'],code) if row else None
+    if not saved:
+        candidate=st.session_state.get('lynch_data_'+code)
+        if candidate:
+            try:saved=check_financial_snapshot(candidate)
+            except StorageError:pass
+    if not saved or saved['data']['code']!=code:return None
+    return {'code':code,'name':saved['data'].get('name',code),'quote':saved.get('quote',{}),
+            'ttm':saved.get('ttm',{}),'financial_fetched_at':saved['data'].get('fetched_at')}
+
+
+def watch_fetch(code,provider,today,progress=None):
+    report_progress=progress or (lambda message:None)
     result={'code':code,'name':st.session_state.get('watch_names',{}).get(code,code),'lamp':None,'metrics':None,'flow':None,'krx':None,'report':None,'errors':{},
             'price_source':None,'fetched':datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y-%m-%d %H:%M')}
+    report_progress('가격·추세를 조회합니다…')
     try:
         history,lamp,chart,source=price_history_with_fallback(code,provider,today)
         result['lamp']=lamp
@@ -1010,7 +1029,26 @@ def watch_fetch(code,provider,today):
         if name:result['name']=name
     except DataError as exc:
         result['errors']['price']=str(exc)
-    if api_key('DART_CRTFC_KEY'):
+    report_progress('재무자료를 확인합니다…')
+    if code=='214450':
+        saved=pc_research_financial(code)
+        if saved:
+            result['financial_snapshot']=saved
+            result['name']=saved.get('name') or result['name']
+            if result.get('price_rows'):
+                try:
+                    from predash.lynch_price import collect as collect_close
+                    loader=lambda *_:result['price_rows']
+                    quote=collect_close(code,today,public=loader if result['price_source']=='공공데이터포털' else None,
+                                        kis=loader if result['price_source']!='공공데이터포털' else None)
+                    if quote['date']>=saved.get('quote',{}).get('date',''):saved['quote']=quote
+                except (DataError,ValueError,TypeError):pass
+            result['pc_ttm']=calculate_ttm(saved['ttm'],saved['quote'],today)
+            result['report']={'disclosures':[{'date':r.get('available_on',''),'title':'PC 검증 재무 원문 · '+r.get('period_end',''),
+                'url':r['source']} for r in saved.get('ttm',{}).get('inputs',[]) if r.get('source')]}
+            result['errors']['metrics']='최근 분기 매출·영업이익은 PC 수집자료에 포함되지 않습니다.'
+        else:result['errors']['metrics']='PC 수집기로 재무자료를 저장한 뒤 PC 저장자료 불러오기를 눌러주세요.'
+    elif api_key('DART_CRTFC_KEY'):
         try:result['metrics']=provider.latest_period_metrics(code,today)
         except DataError as exc:result['errors']['metrics']=str(exc)
         try:
@@ -1022,6 +1060,7 @@ def watch_fetch(code,provider,today):
                 'url':'https://dart.fss.or.kr/dsaf001/main.do?rcpNo='+row['rcept_no']}
                 for row in (notices or {}).get('list',[])]}
         except DataError as exc:result['errors']['report']=str(exc)
+    report_progress('수급·시장 자료를 조회합니다…')
     if all(account_settings()[k] for k in ('key','secret','cano','product')):
         try:result['flow']=kis_client().investor_flow(code)
         except BrokerError as exc:result['errors']['flow']=str(exc)
@@ -1038,6 +1077,7 @@ def watch_fetch(code,provider,today):
                 st.session_state[cache]=cached
             result['relative']=relative(result['price_rows'],cached['rows'],code,today)
         except (BrokerError,MacroError) as exc:result['errors']['relative']=str(exc)
+    report_progress('조회가 끝났습니다. 확인된 자료를 표시합니다.')
     return result
 
 password=os.getenv('APP_PASSWORD','').strip()
@@ -1484,7 +1524,7 @@ elif page=='투자 근거':
             selected=st.selectbox('저장한 관심종목',saved_codes,format_func=lambda c:f'{names.get(c,c)} · {c}',key='decision_pick')
         else:selected=''
         code=st.text_input('조회할 종목코드',value=selected,max_chars=6,key=f'decision_code_{selected}').strip()
-    with market_control:market_name=st.selectbox('비교 시장',['코스피','코스닥'])
+    with market_control:market_name=st.selectbox('비교 시장',['자동','코스피','코스닥'])
     with refresh_control:refresh=st.button('근거 자료 새로고침',type='primary',use_container_width=True)
     cache_key='decision_'+code+'_'+market_name
     if refresh:
@@ -1493,19 +1533,25 @@ elif page=='투자 근거':
         else:
             today=datetime.now(ZoneInfo('Asia/Seoul')).date();provider=official_client()
             with st.spinner('공식 시세·실적·수급과 비교 시장을 조회합니다…'):
-                item=watch_fetch(code,provider,today);chart=[];chart_error=''
+                progress=st.empty()
+                item=watch_fetch(code,provider,today,progress=progress.caption);chart=[];chart_error=''
+                progress.empty()
                 try:
                     settings=account_settings()
                     if not all(settings[k] for k in ('key','secret','cano','product')):
                         raise EvidenceError('시장 비교 차트는 KIS 시세 연결이 필요합니다.')
                     actual=item.get('benchmark')
+                    if market_name=='자동':
+                        if not actual:raise EvidenceError('상장시장 자동 확인 불가 · 비교 시장에서 코스피 또는 코스닥을 선택해 주세요.')
+                        market_name=actual
                     if actual and actual!=market_name:
                         raise EvidenceError('종목 상장시장은 '+actual+'입니다. 비교 시장을 변경하세요.')
-                    price_rows,_,_,_=price_history_with_fallback(code,provider,today)
+                    price_rows=item.get('price_rows')
+                    if not price_rows:price_rows,_,_,_=price_history_with_fallback(code,provider,today)
                     chart=comparison(price_rows,
                         kis_client().index_bars('0001' if market_name=='코스피' else '1001'),code,today)
                 except (BrokerError,DataError,EvidenceError) as exc:chart_error=str(exc)
-            st.session_state[cache_key]={'item':item,'chart':chart,'chart_error':chart_error}
+            st.session_state[cache_key]={'item':item,'chart':chart,'chart_error':chart_error,'market':market_name}
             if code in saved_codes:
                 if 'watch_results' not in st.session_state:st.session_state.watch_results={}
                 st.session_state.watch_results[code]=item
@@ -1518,19 +1564,35 @@ elif page=='투자 근거':
     if not data:
         st.info('관심종목을 선택하거나 종목코드를 입력한 뒤 근거 자료 새로고침을 누르세요.')
         st.stop()
+    market_name=data.get('market',market_name)
     item=data['item'];m=item['metrics'];lamp=item['lamp'];flow=item['flow']
     st.subheader(f"{item['name']} · {code}")
     st.caption(f"자료 조회 {item['fetched']} · 기관별 기준일은 아래에 표시합니다.")
+    if not any((item.get('lamp'),item.get('metrics'),item.get('flow'),item.get('pc_ttm',{}).get('eps') is not None)):
+        st.warning('조회 가능한 자료가 없습니다. 아래 원인을 확인해 주세요.')
+    if item.get('errors'):
+        labels={'price':'가격·추세','metrics':'매출·영업이익','report':'공시','flow':'수급','krx':'거래소','relative':'시장 대비 성과'}
+        for source,reason in item['errors'].items():st.caption(labels.get(source,source)+' · '+str(reason))
+    if item.get('pc_ttm'):
+        t=item['pc_ttm'];q=item['financial_snapshot'].get('quote',{})
+        st.subheader('PC에서 수집한 공식 재무자료')
+        a,b,c=st.columns(3)
+        a.metric('최근 12개월 EPS',lynch_number(t.get('eps'),'원',2))
+        b.metric('최근 12개월 PER',lynch_number(t.get('per'),'배',2))
+        c.metric('종가',lynch_number(q.get('close'),'원',0))
+        st.caption(f"가격 기준일 {q.get('date','미확인')} · TTM 기간 {t.get('period_start') or '미확인'} ~ {t.get('period_end') or '미확인'}")
+        if t.get('per') is None:st.info('TTM 계산 확인 필요 · '+' · '.join(t.get('data_gaps',[])))
     export_connected=bool(st.session_state.get('decision_exports_'+code))
-    status=[('매크로','연결 준비'),('산업·수출','수출 연결' if export_connected else '추가 근거 필요'),('실적','자료 연결' if m else '보류'),
+    status=[('매크로','연결 준비'),('산업·수출','수출 연결' if export_connected else '추가 근거 필요'),('실적','EPS·TTM 연결' if item.get('pc_ttm',{}).get('eps') is not None else '자료 연결' if m else '보류'),
             ('가격·추세','자료 연결' if lamp else '보류'),('수급','자료 연결' if flow else '보류')]
     st.html("<div class='pd-evidence-status'>"+''.join(f"<div><small>{label}</small><b>{state}</b></div>" for label,state in status)+"</div>")
-    a,b,c,d=st.columns(4)
-    a.metric('매출',f"{m['revenue']:,.1f}억" if m else '보류')
-    b.metric('영업이익',f"{m['profit']:,.1f}억" if m else '보류')
-    c.metric('영업이익 동기 증가율',f"{m['growth_pct']:+.1f}%" if m and m['growth_pct'] is not None else '보류')
-    d.metric('영업이익률',f"{m['margin_pct']:,.1f}%" if m and m['margin_pct'] is not None else '보류')
-    if m:st.caption(f"OpenDART · {m['year']}년 {m['quarter']}분기 누적 · {m['basis']} · 전년 동기 누적 비교")
+    if m or not item.get('pc_ttm'):
+        a,b,c,d=st.columns(4)
+        a.metric('매출',f"{m['revenue']:,.1f}억" if m else '보류')
+        b.metric('영업이익',f"{m['profit']:,.1f}억" if m else '보류')
+        c.metric('영업이익 동기 증가율',f"{m['growth_pct']:+.1f}%" if m and m['growth_pct'] is not None else '보류')
+        d.metric('영업이익률',f"{m['margin_pct']:,.1f}%" if m and m['margin_pct'] is not None else '보류')
+        if m:st.caption(f"OpenDART · {m['year']}년 {m['quarter']}분기 누적 · {m['basis']} · 전년 동기 누적 비교")
     left,right=st.columns([1.6,1],gap='medium')
     with left:
         st.subheader('시장보다 강했는가?')
