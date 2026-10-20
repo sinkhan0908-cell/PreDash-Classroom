@@ -14,12 +14,14 @@ from xml.etree import ElementTree as ET
 from predash.ttm import TtmError,VERSION,now,calculate
 from predash.company_codes import company_name_key
 
-READER_VERSION=1
+READER_VERSION=2
 
 X='http://www.xbrl.org/2003/instance'
 D='http://xbrl.org/2006/xbrldi'
+# The actual 20260814002997 presentation places WeightedAverageShares under
+# BasicEarningsPerShareAbstract; AdjustedWeightedAverageShares is diluted.
 CONCEPTS={'profit':'ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity',
-          'weighted_shares':'WeightedAverageNumberOfOrdinarySharesOutstanding',
+          'weighted_shares':('WeightedAverageNumberOfOrdinarySharesOutstanding','WeightedAverageShares'),
           'reported_eps':'BasicEarningsLossPerShare'}
 REPORTS={3:'11013',6:'11012',9:'11014',12:'11011'}
 
@@ -79,9 +81,9 @@ def parse(body,periods,receipt,today):
         for fact in root:
             period=contexts.get(fact.get('contextRef'))
             # Extension concepts or similarly named company concepts are not inferred.
-            if not period or not fact.tag.startswith('{http://xbrl.ifrs.org/taxonomy/'):continue
+            if not period or not re.fullmatch(r'\{https?://xbrl\.ifrs\.org/taxonomy/\d{4}-\d{2}-\d{2}/ifrs-full\}[^{}]+',fact.tag):continue
             for key,concept in CONCEPTS.items():
-                if local(fact.tag)!=concept:continue
+                if local(fact.tag) not in (concept if isinstance(concept,tuple) else (concept,)):continue
                 expected={'profit':'KRW','weighted_shares':'shares','reported_eps':'KRW/shares'}[key]
                 if units.get(fact.get('unitRef'))!=expected or fact.get('scale') is not None:continue
                 try:value=float(Decimal((fact.text or '').strip()))
@@ -146,7 +148,7 @@ def collect(provider,today,annual,read=download,progress=None):
     for row in inputs:
         comparable=[r for r in annual['annual_eps'] if r['period_start']==row['period_start'] and r['period_end']==row['period_end']]
         if comparable and any(abs(r['reported_eps']-row['reported_eps'])>1.1 for r in comparable):raise TtmError('DART XBRL과 공식 IR 연간 EPS 불일치 · 정정 여부 확인 필요')
-    block={**annual,'status':'success','inputs':inputs,'reason':None,'source_route':'DART XBRL CFS ordinary EPS + official IR annual EPS',
+    block={**annual,'xbrl_reader_version':READER_VERSION,'status':'success','inputs':inputs,'reason':None,'source_route':'DART XBRL CFS ordinary EPS + official IR annual EPS',
         'last_attempt_at':now(),'fetched_at':now(),'latest_scope':'기업명이 일치하는 DART 정기공시 목록의 최신 완료 기간 · 원문 XBRL 계정·기간·단위 대조'}
     checked=calculate(block,{'close':1,'date':today.isoformat(),'source':'validation'},today)
     if checked['eps'] is None:raise TtmError('XBRL TTM 기간·순이익·주식수 대조 실패')

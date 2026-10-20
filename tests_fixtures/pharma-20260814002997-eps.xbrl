@@ -1,0 +1,147 @@
+<?xml version='1.0' encoding='utf-8'?>
+<xbrli:xbrl xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full" xmlns:xbrldi="http://xbrl.org/2006/xbrldi" xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
+  <xbrli:context id="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</xbrli:identifier>
+      <xbrli:segment>
+        <xbrldi:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:ConsolidatedMember</xbrldi:explicitMember>
+      </xbrli:segment>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2026-01-01</xbrli:startDate>
+      <xbrli:endDate>2026-06-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</xbrli:identifier>
+      <xbrli:segment>
+        <xbrldi:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:ConsolidatedMember</xbrldi:explicitMember>
+        <xbrldi:explicitMember dimension="ifrs-full:ClassesOfShareCapitalAxis">ifrs-full:OrdinarySharesMember</xbrldi:explicitMember>
+      </xbrli:segment>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2026-01-01</xbrli:startDate>
+      <xbrli:endDate>2026-06-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</xbrli:identifier>
+      <xbrli:segment>
+        <xbrldi:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:SeparateMember</xbrldi:explicitMember>
+      </xbrli:segment>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2026-01-01</xbrli:startDate>
+      <xbrli:endDate>2026-06-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</xbrli:identifier>
+      <xbrli:segment>
+        <xbrldi:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:SeparateMember</xbrldi:explicitMember>
+        <xbrldi:explicitMember dimension="ifrs-full:ClassesOfShareCapitalAxis">ifrs-full:OrdinarySharesMember</xbrldi:explicitMember>
+      </xbrli:segment>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2026-01-01</xbrli:startDate>
+      <xbrli:endDate>2026-06-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</xbrli:identifier>
+      <xbrli:segment>
+        <xbrldi:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:ConsolidatedMember</xbrldi:explicitMember>
+      </xbrli:segment>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2025-01-01</xbrli:startDate>
+      <xbrli:endDate>2025-06-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</xbrli:identifier>
+      <xbrli:segment>
+        <xbrldi:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:ConsolidatedMember</xbrldi:explicitMember>
+        <xbrldi:explicitMember dimension="ifrs-full:ClassesOfShareCapitalAxis">ifrs-full:OrdinarySharesMember</xbrldi:explicitMember>
+      </xbrli:segment>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2025-01-01</xbrli:startDate>
+      <xbrli:endDate>2025-06-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</xbrli:identifier>
+      <xbrli:segment>
+        <xbrldi:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:SeparateMember</xbrldi:explicitMember>
+      </xbrli:segment>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2025-01-01</xbrli:startDate>
+      <xbrli:endDate>2025-06-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</xbrli:identifier>
+      <xbrli:segment>
+        <xbrldi:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:SeparateMember</xbrldi:explicitMember>
+        <xbrldi:explicitMember dimension="ifrs-full:ClassesOfShareCapitalAxis">ifrs-full:OrdinarySharesMember</xbrldi:explicitMember>
+      </xbrli:segment>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2025-01-01</xbrli:startDate>
+      <xbrli:endDate>2025-06-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+  <xbrli:unit id="KRW">
+    <xbrli:measure>iso4217:KRW</xbrli:measure>
+  </xbrli:unit>
+  <xbrli:unit id="KRWEPS">
+    <xbrli:divide>
+      <xbrli:unitNumerator>
+        <xbrli:measure>iso4217:KRW</xbrli:measure>
+      </xbrli:unitNumerator>
+      <xbrli:unitDenominator>
+        <xbrli:measure>xbrli:shares</xbrli:measure>
+      </xbrli:unitDenominator>
+    </xbrli:divide>
+  </xbrli:unit>
+  <xbrli:unit id="SHARES">
+    <xbrli:measure>xbrli:shares</xbrli:measure>
+  </xbrli:unit>
+  <ifrs-full:AdjustedWeightedAverageShares contextRef="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="SHARES" decimals="INF">11565295</ifrs-full:AdjustedWeightedAverageShares>
+  <ifrs-full:AdjustedWeightedAverageShares contextRef="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="SHARES" decimals="INF">11565295</ifrs-full:AdjustedWeightedAverageShares>
+  <ifrs-full:AdjustedWeightedAverageShares contextRef="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="SHARES" decimals="INF">11572585</ifrs-full:AdjustedWeightedAverageShares>
+  <ifrs-full:AdjustedWeightedAverageShares contextRef="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="SHARES" decimals="INF">11565295</ifrs-full:AdjustedWeightedAverageShares>
+  <ifrs-full:BasicEarningsLossPerShare contextRef="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember" unitRef="KRWEPS" decimals="INF">10024</ifrs-full:BasicEarningsLossPerShare>
+  <ifrs-full:BasicEarningsLossPerShare contextRef="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRWEPS" decimals="INF">10024</ifrs-full:BasicEarningsLossPerShare>
+  <ifrs-full:BasicEarningsLossPerShare contextRef="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember" unitRef="KRWEPS" decimals="INF">10222</ifrs-full:BasicEarningsLossPerShare>
+  <ifrs-full:BasicEarningsLossPerShare contextRef="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRWEPS" decimals="INF">10222</ifrs-full:BasicEarningsLossPerShare>
+  <ifrs-full:BasicEarningsLossPerShare contextRef="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember" unitRef="KRWEPS" decimals="INF">8044</ifrs-full:BasicEarningsLossPerShare>
+  <ifrs-full:BasicEarningsLossPerShare contextRef="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRWEPS" decimals="INF">8044</ifrs-full:BasicEarningsLossPerShare>
+  <ifrs-full:BasicEarningsLossPerShare contextRef="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember" unitRef="KRWEPS" decimals="INF">8024</ifrs-full:BasicEarningsLossPerShare>
+  <ifrs-full:BasicEarningsLossPerShare contextRef="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRWEPS" decimals="INF">8024</ifrs-full:BasicEarningsLossPerShare>
+  <ifrs-full:DilutedEarningsLossPerShare contextRef="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember" unitRef="KRWEPS" decimals="INF">9295</ifrs-full:DilutedEarningsLossPerShare>
+  <ifrs-full:DilutedEarningsLossPerShare contextRef="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRWEPS" decimals="INF">9295</ifrs-full:DilutedEarningsLossPerShare>
+  <ifrs-full:DilutedEarningsLossPerShare contextRef="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember" unitRef="KRWEPS" decimals="INF">9448</ifrs-full:DilutedEarningsLossPerShare>
+  <ifrs-full:DilutedEarningsLossPerShare contextRef="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRWEPS" decimals="INF">9448</ifrs-full:DilutedEarningsLossPerShare>
+  <ifrs-full:DilutedEarningsLossPerShare contextRef="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember" unitRef="KRWEPS" decimals="INF">7516</ifrs-full:DilutedEarningsLossPerShare>
+  <ifrs-full:DilutedEarningsLossPerShare contextRef="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRWEPS" decimals="INF">7516</ifrs-full:DilutedEarningsLossPerShare>
+  <ifrs-full:DilutedEarningsLossPerShare contextRef="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember" unitRef="KRWEPS" decimals="INF">7498</ifrs-full:DilutedEarningsLossPerShare>
+  <ifrs-full:DilutedEarningsLossPerShare contextRef="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRWEPS" decimals="INF">7498</ifrs-full:DilutedEarningsLossPerShare>
+  <ifrs-full:ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity contextRef="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRW" decimals="0">104146677079</ifrs-full:ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity>
+  <ifrs-full:ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity contextRef="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRW" decimals="0">106199543199</ifrs-full:ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity>
+  <ifrs-full:ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity contextRef="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRW" decimals="0">83578088330</ifrs-full:ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity>
+  <ifrs-full:ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity contextRef="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRW" decimals="0">83369571565</ifrs-full:ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity>
+  <ifrs-full:WeightedAverageShares contextRef="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="SHARES" decimals="INF">10389648</ifrs-full:WeightedAverageShares>
+  <ifrs-full:WeightedAverageShares contextRef="CFY2026dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="SHARES" decimals="INF">10389648</ifrs-full:WeightedAverageShares>
+  <ifrs-full:WeightedAverageShares contextRef="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="SHARES" decimals="INF">10389648</ifrs-full:WeightedAverageShares>
+  <ifrs-full:WeightedAverageShares contextRef="PFY2025dHYA_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="SHARES" decimals="INF">10389648</ifrs-full:WeightedAverageShares>
+</xbrli:xbrl>

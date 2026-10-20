@@ -7,7 +7,7 @@ _LOCK=RLock()
 SPECS=(
     ('predash.ttm','COLLECTOR_VERSION',3),
     ('predash.pharma_ir','PARSER_VERSION',2),
-    ('predash.dart_xbrl','READER_VERSION',1),
+    ('predash.dart_xbrl','READER_VERSION',2),
     ('predash.dart_network','DIAGNOSTIC_VERSION',1),
     ('predash.valuation_inputs','INPUTS_VERSION',2),
     ('predash.valuation_evidence','VALUATION_VERSION',3),
