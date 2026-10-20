@@ -5,6 +5,8 @@ from predash.ttm import calculate, VERSION
 from predash.lynch import analyse
 
 
+INPUTS_VERSION=2
+
 def official_annual(saved, today):
     block=saved.get('ttm') or {}
     if block.get('code')!=saved['data']['code'] or (block.get('status')!='success' and block.get('annual_eps_status')!='success'):return {}

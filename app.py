@@ -38,10 +38,11 @@ import predash.financial_store as financial_store_module
 if getattr(financial_store_module, 'FRESHNESS_VERSION', 0) < 1 or getattr(financial_store_module, 'TTM_STORE_VERSION', 0) < 1:
     financial_store_module = importlib.reload(financial_store_module)
 select_financial_snapshot, persist_financial_snapshot, check_financial_snapshot = financial_store_module.select_snapshot, financial_store_module.persist, financial_store_module.clean_snapshot
-from predash.ttm import collect as collect_ttm, calculate as calculate_ttm, due as ttm_due, TtmError
-import predash.valuation_evidence as valuation_evidence_module
-if getattr(valuation_evidence_module,'VALUATION_VERSION',0)<2:
-    valuation_evidence_module=importlib.reload(valuation_evidence_module)
+from predash.runtime import ensure_lynch_runtime
+_lynch_runtime=ensure_lynch_runtime()
+ttm_module=_lynch_runtime['predash.ttm']
+collect_ttm,calculate_ttm,ttm_due,TtmError=ttm_module.collect,ttm_module.calculate,ttm_module.due,ttm_module.TtmError
+valuation_evidence_module=_lynch_runtime['predash.valuation_evidence']
 describe_lynch_valuation=valuation_evidence_module.describe
 from predash.lynch_view import PAGE_STYLE as LYNCH_PAGE_STYLE, metrics as lynch_metrics, table as lynch_table, status as lynch_status_html, number as lynch_number
 from predash.financial_freshness import fingerprint as financial_fingerprint, due as financial_check_due, check_dart as check_dart_changes, check_kis as check_kis_changes
@@ -476,7 +477,8 @@ def lynch_options(code,saved=None,result=None,today=None):
         st.caption('설정을 바꾼 뒤 위의 최신 자료 확인을 누르세요. 기본은 DART 우선·실패 시 KIS입니다. 저장본이 있으면 같은 출처의 변경을 비교하며, 전체 다시 수집을 켜면 조회 경로를 새로 적용합니다.')
         st.caption('자동 확인은 화면 이용 중 6시간 간격, 실패 시 15분 뒤 재시도합니다. 앱을 닫은 동안에는 실행하지 않습니다.')
         if saved and result:
-            payload={'schema_version':2,'analysis':result,'financial':saved['data'],'evidence':saved}
+            from predash.runtime import runtime_versions
+            payload={'schema_version':2,'runtime_versions':runtime_versions(),'analysis':result,'financial':saved['data'],'evidence':saved}
             st.download_button('결과·근거 내려받기',json.dumps(payload,ensure_ascii=False,indent=2,allow_nan=False),file_name=f'lynch-{code}-{today}.json',mime='application/json',key='lynch_export')
 
 
@@ -669,7 +671,7 @@ def lynch_ttm_refresh(code,today,force=False):
         with st.spinner('공식 자료로 최근 12개월 PER을 확인합니다…'):
             block=collect_ttm(None if code=='005930' else official_client(),code,today)
             if block.get('status')!='success' and old and old.get('status')=='success' and old.get('code')==code:
-                annual={k:v for k,v in block.items() if k.startswith('annual_') or k in ('network_diagnostics','dart_error','xbrl_error')}
+                annual={k:v for k,v in block.items() if k.startswith('annual_') or k in ('network_diagnostics','dart_error','xbrl_error','collector_version')}
                 block={**old,**annual,'last_error':block.get('reason','최근 TTM 확인 실패'),
                     'last_attempt_at':at,'annual_source_fetched_at':block.get('fetched_at')}
             if block.get('annual_eps_errors') and old and old.get('code')==code:

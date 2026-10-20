@@ -14,6 +14,7 @@ ROOT='https://pharmaresearch.com'
 INDEX=ROOT+'/sub/ir/list.html?curpage=1'
 CODE='214450'
 CORP='00970453'
+PARSER_VERSION=2
 
 
 def compact(text):return re.sub(r'\s+','',text)
@@ -222,7 +223,7 @@ def collect(today,download=fetch,read=extract):
         if len({r['reported_eps'] for r in rows if r['period_end']==f'{y}-12-31'})>1:conflicts.append(f'{y}년 인접 공시 EPS 불일치 · 재작성 확인 필요')
     return {'version':VERSION,'status':'failed','code':CODE,'inputs':[],
         'reason':'공식 IR 연간 EPS 확보 · 최근 누적·전년 동기 EPS 주석 미확보로 TTM 미산출',
-        'annual_eps_status':'success','annual_eps':[r for r in rows if int(r['period_end'][:4])>=latest-4],
+        'annual_eps_status':'success','annual_parser_version':PARSER_VERSION,'annual_eps':[r for r in rows if int(r['period_end'][:4])>=latest-4],
         'annual_eps_errors':errors,'annual_comparability_gaps':conflicts,
         'source_route':'PharmaResearch official IR annual reports','listing_source':INDEX,
         'fetched_at':now(),'last_attempt_at':now(),

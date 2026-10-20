@@ -14,6 +14,7 @@ from html.parser import HTMLParser
 from predash.financial_validation import quote_date_check,numeric
 
 VERSION=1
+COLLECTOR_VERSION=3
 ROOT='https://images.samsung.com/is/content/samsung/assets/global/ir/docs/'
 INDEX='https://www.samsung.com/global/ir/financial-information/audited-financial-statements/'
 
@@ -302,9 +303,11 @@ def collect(provider,code,today):
                 from predash.dart_network import diagnose
                 block['network_diagnostics']=diagnose()
             # This independently verified annual result is useful even without an interim TTM.
+            block['collector_version']=COLLECTOR_VERSION
             return block
     # Validate financial identities independent of the user's displayed quote.
     check=calculate(block,{'close':1,'date':today.isoformat(),'source':'validation'},today)
     hard=[r for r in check['data_gaps'] if not r.startswith(('공시의 반올림','IR 보고서 작성일')) and '0·적자' not in r]
     if hard:raise TtmError(hard[0])
+    block['collector_version']=COLLECTOR_VERSION
     return block

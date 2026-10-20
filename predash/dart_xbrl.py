@@ -14,6 +14,8 @@ from xml.etree import ElementTree as ET
 from predash.ttm import TtmError,VERSION,now,calculate
 from predash.company_codes import company_name_key
 
+READER_VERSION=1
+
 X='http://www.xbrl.org/2003/instance'
 D='http://xbrl.org/2006/xbrldi'
 CONCEPTS={'profit':'ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity',

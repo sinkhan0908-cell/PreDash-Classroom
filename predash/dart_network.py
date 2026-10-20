@@ -10,6 +10,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor,TimeoutError as FutureTimeout
 from predash.ttm import now
 
+DIAGNOSTIC_VERSION=1
+
 HOST='opendart.fss.or.kr'
 
 
