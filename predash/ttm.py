@@ -298,6 +298,9 @@ def collect(provider,code,today):
             try:block=collect_xbrl(provider,today,block)
             except (TtmError,DataError) as xbrl_error:block['xbrl_error']=str(xbrl_error)
             except (ValueError,TypeError,KeyError):block['xbrl_error']='DART XBRL 목록·원문 형식 확인 필요'
+            if any('[CONNECT_TIMEOUT]' in str(block.get(k,'')) for k in ('dart_error','xbrl_error')):
+                from predash.dart_network import diagnose
+                block['network_diagnostics']=diagnose()
             # This independently verified annual result is useful even without an interim TTM.
             return block
     # Validate financial identities independent of the user's displayed quote.

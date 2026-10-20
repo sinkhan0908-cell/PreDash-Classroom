@@ -539,6 +539,11 @@ def lynch_results(saved,today):
         if saved.get('ttm',{}).get('dart_error'):st.caption('DART 수집 사유: '+saved['ttm']['dart_error'])
         if saved.get('ttm',{}).get('xbrl_error'):st.caption('XBRL 수집 사유: '+saved['ttm']['xbrl_error'])
         if saved.get('ttm',{}).get('latest_scope'):st.caption(saved['ttm']['latest_scope'])
+        network=saved.get('ttm',{}).get('network_diagnostics')
+        if network:
+            st.write('DART 연결 진단: '+network['conclusion'])
+            st.dataframe([{'단계':r['stage'],'결과':'도달' if r['status']=='success' else '실패','소요(ms)':r['elapsed_ms']} for r in network['stages']],hide_index=True,use_container_width=True)
+            st.caption(network['scope'])
         for reason in saved.get('ttm',{}).get('annual_eps_errors',[]):st.caption('연간 EPS 수집 미완료 · '+reason)
         st.caption('API 조회 성공·변경 없음은 제공처 응답 확인이며 공시 원문 검증 완료를 뜻하지 않습니다. 원문 대조는 아래 확인일에 한정합니다.')
         st.write(f"PER 분모: {valuation['annual_eps_year']}년 EPS {valuation['annual_eps_value']}원 · {valuation['annual_eps_definition']}")
@@ -664,7 +669,7 @@ def lynch_ttm_refresh(code,today,force=False):
         with st.spinner('공식 자료로 최근 12개월 PER을 확인합니다…'):
             block=collect_ttm(None if code=='005930' else official_client(),code,today)
             if block.get('status')!='success' and old and old.get('status')=='success' and old.get('code')==code:
-                annual={k:v for k,v in block.items() if k.startswith('annual_')}
+                annual={k:v for k,v in block.items() if k.startswith('annual_') or k in ('network_diagnostics','dart_error','xbrl_error')}
                 block={**old,**annual,'last_error':block.get('reason','최근 TTM 확인 실패'),
                     'last_attempt_at':at,'annual_source_fetched_at':block.get('fetched_at')}
             if block.get('annual_eps_errors') and old and old.get('code')==code:

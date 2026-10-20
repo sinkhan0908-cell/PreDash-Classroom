@@ -78,8 +78,8 @@ def attachment(body):
         if part.scheme=='https' and part.netloc=='dart.fss.or.kr' and part.path=='/dsaf001/main.do':
             receipt=query.get('rcpNo',[''])[0]
             if re.fullmatch(r'\d{14}',receipt):receipts.append(receipt)
-    if len(set(pdfs))!=1 or len(set(receipts))!=1:raise TtmError('공식 IR 보고서 첨부·DART 접수번호 확인 필요')
-    return pdfs[0],receipts[0]
+    if len(set(pdfs))!=1 or len(set(receipts))>1:raise TtmError('공식 IR 보고서 첨부·DART 접수번호 확인 필요')
+    return pdfs[0],receipts[0] if receipts else None
 
 
 def extract(body):
@@ -87,7 +87,9 @@ def extract(body):
     try:
         from pypdf import PdfReader
         reader=PdfReader(io.BytesIO(body))
-        if reader.is_encrypted or not 10<=len(reader.pages)<=500:raise TtmError('IR PDF 페이지·암호화 확인 필요')
+        if reader.is_encrypted:raise TtmError('IR PDF 암호화로 본문 읽기 불가')
+        if len(reader.pages)<10:raise TtmError('공식 IR 첨부가 표지·요약본으로 본문 EPS 없음')
+        if len(reader.pages)>500:raise TtmError('IR PDF 페이지 한도 초과')
         return [page.extract_text() or '' for page in reader.pages]
     except TtmError:raise
     except Exception:raise TtmError('공식 IR PDF 읽기 실패 · 이전 성공 자료 유지') from None
@@ -110,8 +112,17 @@ def parse_annual(pages,year,url,digest,receipt,today):
     head=compact(' '.join(pages[:6]))
     if not re.search(r'회사명[:：]?주식회사파마리서치(?=대표이사)',head):raise TtmError('IR 보고서 회사명 불일치')
     if f'{year}.01.01' not in head or f'{year}.12.31' not in head or '사업보고서' not in head:raise TtmError('IR 보고서 사업연도·기간 확인 필요')
-    try:available=date.fromisoformat(f'{receipt[:4]}-{receipt[4:6]}-{receipt[6:8]}')
-    except ValueError:raise TtmError('IR 접수번호 날짜 확인 필요') from None
+    availability_type='filing_receipt_date'
+    if receipt:
+        try:available=date.fromisoformat(f'{receipt[:4]}-{receipt[4:6]}-{receipt[6:8]}')
+        except ValueError:raise TtmError('IR 접수번호 날짜 확인 필요') from None
+    else:
+        dates=re.findall(r'한국거래소귀중(20\d{2})년(\d{1,2})월(\d{1,2})일',head)
+        if len(set(dates))!=1:raise TtmError('IR 보고서 표지 제출일 확인 필요')
+        try:available=date(*map(int,dates[0]))
+        except ValueError:raise TtmError('IR 보고서 표지 제출일 오류') from None
+        availability_type='report_submission_date'
+
     if available>today or date(year,12,31)>=available:raise TtmError('IR 보고서 접수일·완료 기간 확인 필요')
     sections=[]
     for i,page in enumerate(pages[6:],6):
@@ -121,25 +132,67 @@ def parse_annual(pages,year,url,digest,receipt,today):
             section=text[m.end():]
             section=re.split(r'\d+\.현금흐름표\(연결\)',section)[0]
             if '당기(단위:원)보통주' in section:sections.append((i+1,section))
+    if not sections:
+        legacy=legacy_values(pages)
+        if legacy:
+            page,values=legacy
+            return make_rows(values,year,url,digest,receipt,available,availability_type,page,today)
     if len(sections)!=1:raise TtmError('연결 주당이익 주석 위치·형식 확인 필요')
     page,section=sections[0]
     if re.search(r'주식분할|무상증자|소급조정',section):raise TtmError('EPS 주식수 소급조정 대조 필요')
     blocks=re.findall(r'(당기|전기)\(단위:원\)보통주(.*?)(?=(?:당기|전기)\(단위:원\)보통주|$)',section)
     if [name for name,_ in blocks]!=['당기','전기']:raise TtmError('연결 EPS 당기·전기 열 확인 필요')
+    return make_rows([basic_values(text) for _,text in blocks],year,url,digest,receipt,available,availability_type,page,today)
+
+
+def make_rows(values,year,url,digest,receipt,available,availability_type,page,today):
     rows=[]
-    for target,(_,text) in zip((year,year-1),blocks):
-        profit,shares,eps=basic_values(text)
+    for target,(profit,shares,eps) in zip((year,year-1),values):
         row={'period_start':f'{target}-01-01','period_end':f'{target}-12-31','profit':profit,
             'weighted_shares':shares,'reported_eps':eps,'basis':'CFS','currency':'KRW',
             'definition':'ordinary_basic','share_adjustment_flag':False,'source':url,
             'source_location':f'PDF {page}쪽부터 연결 주당이익 주석','document_sha256':digest,
-            'available_on':available.isoformat(),'available_on_type':'filing_receipt_date','receipt':receipt,
+            'available_on':available.isoformat(),'available_on_type':availability_type,'receipt':receipt,
             'fetched_at':now()}
         check=calculate({'version':VERSION,'status':'success','inputs':[row]},
             {'date':today.isoformat(),'close':1,'source':'validation'},today)
         if check['eps'] is None:raise TtmError('공식 IR 순이익·주식수·기본 EPS 대조 실패')
         rows.append(row)
     return rows
+
+
+def legacy_values(pages):
+    # The heading itself has no '(연결)' suffix in older reports. Require the full
+    # consolidated-notes scope, then the ordinary-profit label in its basic EPS table.
+    text='\n'.join(pages[6:]);starts=list(re.finditer(r'3\.\s*연결재무제표\s*주석',text))
+    if len(starts)!=1:return None
+    stop=re.search(r'4\.\s*재무제표',text[starts[0].end():])
+    if not stop:return None
+    begin=starts[0].end();section=text[begin:begin+stop.start()]
+    notes=list(re.finditer(r'(?<![\d(])\b\d+\.\s*주당이익\s*(?!\(연결\))',section))
+    if len(notes)!=1:return None
+    note=section[notes[0].end():]
+    basic=re.search(r'1\)\s*기본주당이익(.*?)2\)\s*보통주에',note,re.S)
+    if not basic:return None
+    table=basic.group(1)
+    if not re.search(r'\(단위\s*:\s*주\s*,\s*원\)\s*구분\s*당기\s*전기',table):raise TtmError('과거 EPS 단위·당기/전기 열 확인 필요')
+    if re.search(r'주식분할|무상증자|소급조정',table):raise TtmError('EPS 주식수 소급조정 대조 필요')
+    def pair(label):
+        matches=re.findall(label+r'\s*(\(?-?\d[\d,]*\)?)\s+(\(?-?\d[\d,]*\)?)',table)
+        if len(matches)!=1:raise TtmError('과거 연결 기본 EPS 계정 누락·중복')
+        def number(v):return -float(v[1:-1].replace(',','')) if v.startswith('(') and v.endswith(')') else float(v.replace(',',''))
+        return [number(v) for v in matches[0]]
+    profits=pair(r'지배기업\s*보통주\s*순이익')
+    shares=pair(r'가중평균유통보통주식수')
+    eps=pair(r'기본주당이익')
+    # Preserve the actual PDF page containing this note heading.
+    prefix=text[:begin+notes[0].start()]
+    accumulated=0;page_number=7
+    for page_number,page in enumerate(pages[6:],7):
+        accumulated+=len(page)+1
+        if accumulated>len(prefix):break
+    return page_number,list(zip(profits,shares,eps))
+
 
 
 def collect(today,download=fetch,read=extract):
