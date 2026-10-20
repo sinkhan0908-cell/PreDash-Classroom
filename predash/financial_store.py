@@ -10,7 +10,7 @@ from predash.cloud_store import StorageError,StorageConflict
 FIELD='lynch_financial_snapshots'
 CACHE_VERSION=1
 FRESHNESS_VERSION=1
-TTM_STORE_VERSION=1
+TTM_STORE_VERSION=2
 CALCULATION_VERSION='lynch-4year-v1'
 FORBIDDEN={'key','secret','token','authorization','appkey','appsecret','access_token','cano','account','account_number','quantity','positions','credentials'}
 
@@ -54,6 +54,18 @@ def clean_snapshot(saved):
     return result
 
 
+def successful_ttm(block, code):
+    if not isinstance(block,dict) or block.get('status')!='success' or block.get('version')!=1 or block.get('code')!=code:
+        return False
+    try:
+        from datetime import datetime
+        from predash.ttm import calculate
+        checked=calculate(block,{'close':1,'date':now()[:10],'source':'validation'},datetime.fromisoformat(now()).date())
+        return checked.get('eps') is not None
+    except (KeyError,TypeError,ValueError):
+        return False
+
+
 def select_snapshot(payload,code):
     bucket=payload.get(FIELD,{})
     if not isinstance(bucket,dict) or bucket.get('version')!=CACHE_VERSION:return None
@@ -71,6 +83,13 @@ def select_snapshot(payload,code):
         except (StorageError,KeyError,ValueError,TypeError):continue
     if not choices:return None
     _,source,saved,stored_at=max(choices,key=lambda item:(item[0],item[1]=='DART'))
+    # TTM is independently sourced from DART XBRL, so keep the newest valid
+    # successful TTM input even when the freshest annual EPS snapshot is from
+    # the other provider/source.
+    successful=[(timestamp(candidate['ttm'].get('last_attempt_at') or candidate['ttm'].get('fetched_at')),candidate['ttm'])
+                for _,_,candidate,_ in choices if successful_ttm(candidate.get('ttm'),code)]
+    if successful:
+        saved['ttm']=deepcopy(max(successful,key=lambda item:item[0])[1])
     attempts=entry.get('attempts',{})
     if not isinstance(attempts,dict):attempts={}
     saved['_storage']={'restored':True,'stored_at':stored_at,'calculation_version':CALCULATION_VERSION,'freshness':deepcopy(entry.get(source,{}).get('freshness')),'last_attempt':next((a for a in attempts.values() if isinstance(a,dict) and a.get('status')=='failed'),entry.get('last_attempt'))}
@@ -104,7 +123,12 @@ def persist(client,code,saved=None,attempt_kind='financial',failed=False,freshne
                 cleaned['quote']={**deepcopy(old['quote']),'refresh_error':'최근 가격 조회 실패 · 이전 가격과 원래 기준일 유지'}
             if old and old.get('ttm'):
                 incoming=cleaned.get('ttm')
-                if not incoming or old['ttm'].get('last_attempt_at','')>incoming.get('last_attempt_at',''):cleaned['ttm']=deepcopy(old['ttm'])
+                # A later failed retry may update annual diagnostics, but cannot
+                # replace a validated TTM input with an incomplete status block.
+                if successful_ttm(old['ttm'],code) and not successful_ttm(incoming,code):
+                    cleaned['ttm']=deepcopy(old['ttm'])
+                elif not incoming or old['ttm'].get('last_attempt_at','')>incoming.get('last_attempt_at',''):
+                    cleaned['ttm']=deepcopy(old['ttm'])
             previous_check=entry.get(source,{}).get('freshness') if old and old.get('data')==cleaned['data'] else None
             entry[source]={'snapshot':cleaned,'stored_at':now(),'calculation_version':CALCULATION_VERSION}
             if previous_check:entry[source]['freshness']=deepcopy(previous_check)

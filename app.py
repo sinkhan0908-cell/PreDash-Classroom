@@ -35,7 +35,7 @@ collection_status = financial_validation_module.collection_status
 export_validation = financial_validation_module.export_validation
 from predash.financial_cache import FinancialCache
 import predash.financial_store as financial_store_module
-if getattr(financial_store_module, 'FRESHNESS_VERSION', 0) < 1 or getattr(financial_store_module, 'TTM_STORE_VERSION', 0) < 1:
+if getattr(financial_store_module, 'FRESHNESS_VERSION', 0) < 1 or getattr(financial_store_module, 'TTM_STORE_VERSION', 0) < 2:
     financial_store_module = importlib.reload(financial_store_module)
 select_financial_snapshot, persist_financial_snapshot, check_financial_snapshot = financial_store_module.select_snapshot, financial_store_module.persist, financial_store_module.clean_snapshot
 from predash.runtime import ensure_lynch_runtime

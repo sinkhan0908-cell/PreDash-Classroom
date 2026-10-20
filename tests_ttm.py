@@ -215,3 +215,26 @@ class TtmTests(unittest.TestCase):
         self.assertEqual(exported['analysis']['valuation_basis']['per_type'],'ttm')
         self.assertEqual(exported['analysis']['valuation_basis']['annual_per_type'],'annual_eps')
         self.assertEqual(exported['financial']['rows'][-1]['value'],6564)
+
+    def test_successful_ttm_survives_later_failed_attempt_in_same_provider(self):
+        fixture=store_tests.FinancialStoreTests();fixture.setUp()
+        success=deepcopy(fixture.saved);success['ttm']=self.block
+        persist(fixture.client,'005930',success,attempt_kind='ttm')
+        failed=deepcopy(success);failed['data']['fetched_at']='2026-10-17T10:00:00+09:00'
+        failed['ttm']={'version':1,'status':'failed','code':'005930','reason':'interim unavailable','last_attempt_at':'2026-10-17T10:00:00+09:00'}
+        persist(fixture.client,'005930',failed,attempt_kind='ttm',failed=True)
+        restored=select_snapshot(fixture.db['payload'],'005930')
+        self.assertEqual(restored['ttm']['status'],'success')
+        self.assertEqual(restored['ttm']['inputs'],self.block['inputs'])
+
+    def test_ttm_success_from_other_source_survives_freshest_financial_snapshot(self):
+        fixture=store_tests.FinancialStoreTests();fixture.setUp()
+        success=deepcopy(fixture.saved);success['source']='KIS';success['ttm']=self.block
+        persist(fixture.client,'005930',success,attempt_kind='ttm')
+        newest=deepcopy(fixture.saved);newest['source']='DART';newest['data']['fetched_at']='2026-10-17T10:00:00+09:00'
+        newest['ttm']={'version':1,'status':'failed','code':'005930','reason':'network unavailable'}
+        persist(fixture.client,'005930',newest,attempt_kind='ttm',failed=True)
+        restored=select_snapshot(fixture.db['payload'],'005930')
+        self.assertEqual(restored['source'],'DART')
+        self.assertEqual(restored['ttm']['status'],'success')
+        self.assertEqual(restored['ttm']['inputs'],self.block['inputs'])
