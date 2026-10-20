@@ -57,3 +57,9 @@ class PcCollectorTests(unittest.TestCase):
              patch('builtins.print') as output:
             self.assertEqual(pc.main(), 1)
             self.assertNotIn('PRIVATE', str(output.call_args_list))
+
+    def test_diagnostic_exposes_only_known_literal_reasons(self):
+        known = 'XBRL 연결 보통주 기본 EPS 계정·기간·단위 누락 또는 불일치'
+        self.assertIn(known, pc.diagnostic(pc.ttm.TtmError(known)))
+        for error in (ValueError('https://example.com?crtfc_key=PRIVATE'), DataError('PRIVATE'), StorageError('PRIVATE')):
+            self.assertNotIn('PRIVATE', pc.diagnostic(error))

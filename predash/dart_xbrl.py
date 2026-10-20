@@ -108,8 +108,15 @@ def download(provider,receipt,report):
         {'crtfc_key':provider.dart_key,'rcept_no':receipt,'reprt_code':report}).content
 
 
-def collect(provider,today,annual,read=download):
+def collect(provider,today,annual,read=download,progress=None):
+    report_progress = progress or (lambda message: None)
+    def read_report(receipt, report):
+        report_progress("XBRL 원문 다운로드 중 · 접수번호 " + receipt)
+        body = read(provider, receipt, report)
+        report_progress("XBRL 계정·기간·단위 검증 중 · 접수번호 " + receipt)
+        return body
     if annual.get('code')!='214450' or annual.get('annual_eps_status')!='success' or not annual.get('annual_eps'):raise TtmError('독립적인 공식 IR 기업 식별 자료 필요')
+    report_progress('DART 정기공시 목록 조회 중…')
     payload=provider.dart('list.json',corp_code='00970453',bgn_de=(today-timedelta(days=600)).strftime('%Y%m%d'),
         end_de=today.strftime('%Y%m%d'),pblntf_ty='A',last_reprt_at='Y',page_count='100') or {}
     if int(payload.get('total_page',1))>1:raise TtmError('DART 정기공시 목록 추가 페이지 미확인')
@@ -128,13 +135,13 @@ def collect(provider,today,annual,read=download):
     y,month=max(reports)
     if y<today.year-1:raise TtmError('DART 최근 완료 기간 미확인')
     if month==12:
-        inputs=parse(read(provider,reports[y,month],REPORTS[month]),[(f'{y}-01-01',f'{y}-12-31')],reports[y,month],today)
+        inputs=parse(read_report(reports[y,month],REPORTS[month]),[(f'{y}-01-01',f'{y}-12-31')],reports[y,month],today)
     else:
         suffix=f'{month:02d}-{31 if month in (3,12) else 30}'
-        current=parse(read(provider,reports[y,month],REPORTS[month]),[(f'{y}-01-01',f'{y}-{suffix}'),(f'{y-1}-01-01',f'{y-1}-{suffix}')],reports[y,month],today)
+        current=parse(read_report(reports[y,month],REPORTS[month]),[(f'{y}-01-01',f'{y}-{suffix}'),(f'{y-1}-01-01',f'{y-1}-{suffix}')],reports[y,month],today)
         if (y-1,12) not in reports:raise TtmError('DART 전년 연간 보고서 미확인')
         previous=reports[y-1,12]
-        inputs=parse(read(provider,previous,'11011'),[(f'{y-1}-01-01',f'{y-1}-12-31')],previous,today)+current
+        inputs=parse(read_report(previous,'11011'),[(f'{y-1}-01-01',f'{y-1}-12-31')],previous,today)+current
     # A mismatch with the independently obtained IR annual note needs explicit review.
     for row in inputs:
         comparable=[r for r in annual['annual_eps'] if r['period_start']==row['period_start'] and r['period_end']==row['period_end']]
