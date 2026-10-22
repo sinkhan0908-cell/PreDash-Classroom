@@ -10,7 +10,7 @@ from predash.cloud_store import StorageError,StorageConflict
 FIELD='lynch_financial_snapshots'
 CACHE_VERSION=1
 FRESHNESS_VERSION=1
-TTM_STORE_VERSION=2
+TTM_STORE_VERSION=3
 CALCULATION_VERSION='lynch-4year-v1'
 FORBIDDEN={'key','secret','token','authorization','appkey','appsecret','access_token','cano','account','account_number','quantity','positions','credentials'}
 
@@ -90,6 +90,15 @@ def select_snapshot(payload,code):
                 for _,_,candidate,_ in choices if successful_ttm(candidate.get('ttm'),code)]
     if successful:
         saved['ttm']=deepcopy(max(successful,key=lambda item:item[0])[1])
+    if saved.get('ttm'):
+        from predash.business_metrics import view as business_view
+        candidates=[]
+        for _,_,candidate,_ in choices:
+            business=candidate.get('ttm',{}).get('business_metrics')
+            joined={**saved['ttm'],'business_metrics':business}
+            if business_view(joined,code):candidates.append(business)
+        if candidates:
+            saved['ttm']['business_metrics']=deepcopy(max(candidates,key=lambda b:timestamp(b['fetched_at'])))
     attempts=entry.get('attempts',{})
     if not isinstance(attempts,dict):attempts={}
     saved['_storage']={'restored':True,'stored_at':stored_at,'calculation_version':CALCULATION_VERSION,'freshness':deepcopy(entry.get(source,{}).get('freshness')),'last_attempt':next((a for a in attempts.values() if isinstance(a,dict) and a.get('status')=='failed'),entry.get('last_attempt'))}
@@ -129,6 +138,14 @@ def persist(client,code,saved=None,attempt_kind='financial',failed=False,freshne
                     cleaned['ttm']=deepcopy(old['ttm'])
                 elif not incoming or old['ttm'].get('last_attempt_at','')>incoming.get('last_attempt_at',''):
                     cleaned['ttm']=deepcopy(old['ttm'])
+            if old and cleaned.get('ttm'):
+                from predash.business_metrics import view as business_view
+                prior_business=old.get('ttm',{}).get('business_metrics')
+                combined={**cleaned['ttm'],'business_metrics':prior_business}
+                if business_view(combined,code):
+                    incoming_business=cleaned['ttm'].get('business_metrics')
+                    if not business_view(cleaned['ttm'],code) or timestamp(prior_business['fetched_at'])>timestamp(incoming_business['fetched_at']):
+                        cleaned['ttm']['business_metrics']=deepcopy(prior_business)
             previous_check=entry.get(source,{}).get('freshness') if old and old.get('data')==cleaned['data'] else None
             entry[source]={'snapshot':cleaned,'stored_at':now(),'calculation_version':CALCULATION_VERSION}
             if previous_check:entry[source]['freshness']=deepcopy(previous_check)

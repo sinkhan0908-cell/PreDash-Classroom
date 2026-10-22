@@ -1,83 +1,311 @@
 <?xml version='1.0' encoding='utf-8'?>
-<xbrli:xbrl xmlns:ifrs-full="http://xbrl.ifrs.org/taxonomy/2021-03-24/ifrs-full" xmlns:xbrldi="http://xbrl.org/2006/xbrldi" xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
-  <xbrli:context id="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember">
-    <xbrli:entity>
-      <xbrli:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</xbrli:identifier>
-      <xbrli:segment>
-        <xbrldi:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:SeparateMember</xbrldi:explicitMember>
-      </xbrli:segment>
-    </xbrli:entity>
-    <xbrli:period>
-      <xbrli:startDate>2025-01-01</xbrli:startDate>
-      <xbrli:endDate>2025-12-31</xbrli:endDate>
-    </xbrli:period>
-  </xbrli:context>
-  <xbrli:context id="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember">
-    <xbrli:entity>
-      <xbrli:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</xbrli:identifier>
-      <xbrli:segment>
-        <xbrldi:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:SeparateMember</xbrldi:explicitMember>
-        <xbrldi:explicitMember dimension="ifrs-full:ClassesOfShareCapitalAxis">ifrs-full:OrdinarySharesMember</xbrldi:explicitMember>
-      </xbrli:segment>
-    </xbrli:entity>
-    <xbrli:period>
-      <xbrli:startDate>2025-01-01</xbrli:startDate>
-      <xbrli:endDate>2025-12-31</xbrli:endDate>
-    </xbrli:period>
-  </xbrli:context>
-  <xbrli:context id="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember">
-    <xbrli:entity>
-      <xbrli:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</xbrli:identifier>
-      <xbrli:segment>
-        <xbrldi:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:ConsolidatedMember</xbrldi:explicitMember>
-      </xbrli:segment>
-    </xbrli:entity>
-    <xbrli:period>
-      <xbrli:startDate>2025-01-01</xbrli:startDate>
-      <xbrli:endDate>2025-12-31</xbrli:endDate>
-    </xbrli:period>
-  </xbrli:context>
-  <xbrli:context id="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember">
-    <xbrli:entity>
-      <xbrli:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</xbrli:identifier>
-      <xbrli:segment>
-        <xbrldi:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:ConsolidatedMember</xbrldi:explicitMember>
-        <xbrldi:explicitMember dimension="ifrs-full:ClassesOfShareCapitalAxis">ifrs-full:OrdinarySharesMember</xbrldi:explicitMember>
-      </xbrli:segment>
-    </xbrli:entity>
-    <xbrli:period>
-      <xbrli:startDate>2025-01-01</xbrli:startDate>
-      <xbrli:endDate>2025-12-31</xbrli:endDate>
-    </xbrli:period>
-  </xbrli:context>
-  <xbrli:unit id="KRW">
-    <xbrli:measure>iso4217:KRW</xbrli:measure>
-  </xbrli:unit>
-  <xbrli:unit id="KRWEPS">
-    <xbrli:divide>
-      <xbrli:unitNumerator>
-        <xbrli:measure>iso4217:KRW</xbrli:measure>
-      </xbrli:unitNumerator>
-      <xbrli:unitDenominator>
-        <xbrli:measure>xbrli:shares</xbrli:measure>
-      </xbrli:unitDenominator>
-    </xbrli:divide>
-  </xbrli:unit>
-  <xbrli:unit id="SHARES">
-    <xbrli:measure>xbrli:shares</xbrli:measure>
-  </xbrli:unit>
-  <ifrs-full:AdjustedWeightedAverageShares contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="SHARES" decimals="INF">11565295</ifrs-full:AdjustedWeightedAverageShares>
-  <ifrs-full:WeightedAverageShares contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="SHARES" decimals="INF">10389648</ifrs-full:WeightedAverageShares>
-  <ifrs-full:WeightedAverageShares contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="SHARES" decimals="INF">10389648</ifrs-full:WeightedAverageShares>
-  <ifrs-full:BasicEarningsLossPerShare contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember" unitRef="KRWEPS" decimals="INF">15729</ifrs-full:BasicEarningsLossPerShare>
-  <ifrs-full:DilutedEarningsLossPerShare contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember" unitRef="KRWEPS" decimals="INF">14786</ifrs-full:DilutedEarningsLossPerShare>
-  <ifrs-full:DilutedEarningsLossPerShare contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember" unitRef="KRWEPS" decimals="INF">15893</ifrs-full:DilutedEarningsLossPerShare>
-  <ifrs-full:BasicEarningsLossPerShare contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember" unitRef="KRWEPS" decimals="INF">14933</ifrs-full:BasicEarningsLossPerShare>
-  <ifrs-full:AdjustedWeightedAverageShares contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="SHARES" decimals="INF">11565295</ifrs-full:AdjustedWeightedAverageShares>
-  <ifrs-full:ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRW" decimals="0">165120956459</ifrs-full:ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity>
-  <ifrs-full:BasicEarningsLossPerShare contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRWEPS" decimals="INF">15893</ifrs-full:BasicEarningsLossPerShare>
-  <ifrs-full:DilutedEarningsLossPerShare contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRWEPS" decimals="INF">14933</ifrs-full:DilutedEarningsLossPerShare>
-  <ifrs-full:DilutedEarningsLossPerShare contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRWEPS" decimals="INF">14786</ifrs-full:DilutedEarningsLossPerShare>
-  <ifrs-full:BasicEarningsLossPerShare contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRWEPS" decimals="INF">15729</ifrs-full:BasicEarningsLossPerShare>
-  <ifrs-full:ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRW" decimals="0">163418388726</ifrs-full:ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity>
-</xbrli:xbrl>
+<ns0:xbrl xmlns:ns0="http://www.xbrl.org/2003/instance" xmlns:ns1="http://xbrl.org/2006/xbrldi" xmlns:ns2="http://xbrl.ifrs.org/taxonomy/2021-03-24/ifrs-full" xmlns:ns3="http://dart.fss.or.kr/taxonomy/2024-06-30/ifrs/dart">
+  <ns0:context id="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:SeparateMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2025-01-01</ns0:startDate>
+      <ns0:endDate>2025-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:SeparateMember</ns1:explicitMember>
+        <ns1:explicitMember dimension="ifrs-full:ClassesOfShareCapitalAxis">ifrs-full:OrdinarySharesMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2025-01-01</ns0:startDate>
+      <ns0:endDate>2025-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:ConsolidatedMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2025-01-01</ns0:startDate>
+      <ns0:endDate>2025-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:ConsolidatedMember</ns1:explicitMember>
+        <ns1:explicitMember dimension="ifrs-full:ClassesOfShareCapitalAxis">ifrs-full:OrdinarySharesMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2025-01-01</ns0:startDate>
+      <ns0:endDate>2025-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:unit id="KRW">
+    <ns0:measure>iso4217:KRW</ns0:measure>
+  </ns0:unit>
+  <ns0:unit id="KRWEPS">
+    <ns0:divide>
+      <ns0:unitNumerator>
+        <ns0:measure>iso4217:KRW</ns0:measure>
+      </ns0:unitNumerator>
+      <ns0:unitDenominator>
+        <ns0:measure>xbrli:shares</ns0:measure>
+      </ns0:unitDenominator>
+    </ns0:divide>
+  </ns0:unit>
+  <ns0:unit id="SHARES">
+    <ns0:measure>xbrli:shares</ns0:measure>
+  </ns0:unit>
+  <ns2:AdjustedWeightedAverageShares contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="SHARES" decimals="INF">11565295</ns2:AdjustedWeightedAverageShares>
+  <ns2:WeightedAverageShares contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="SHARES" decimals="INF">10389648</ns2:WeightedAverageShares>
+  <ns2:WeightedAverageShares contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="SHARES" decimals="INF">10389648</ns2:WeightedAverageShares>
+  <ns2:BasicEarningsLossPerShare contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember" unitRef="KRWEPS" decimals="INF">15729</ns2:BasicEarningsLossPerShare>
+  <ns2:DilutedEarningsLossPerShare contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember" unitRef="KRWEPS" decimals="INF">14786</ns2:DilutedEarningsLossPerShare>
+  <ns2:DilutedEarningsLossPerShare contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember" unitRef="KRWEPS" decimals="INF">15893</ns2:DilutedEarningsLossPerShare>
+  <ns2:BasicEarningsLossPerShare contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember" unitRef="KRWEPS" decimals="INF">14933</ns2:BasicEarningsLossPerShare>
+  <ns2:AdjustedWeightedAverageShares contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="SHARES" decimals="INF">11565295</ns2:AdjustedWeightedAverageShares>
+  <ns2:ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRW" decimals="0">165120956459</ns2:ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity>
+  <ns2:BasicEarningsLossPerShare contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRWEPS" decimals="INF">15893</ns2:BasicEarningsLossPerShare>
+  <ns2:DilutedEarningsLossPerShare contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRWEPS" decimals="INF">14933</ns2:DilutedEarningsLossPerShare>
+  <ns2:DilutedEarningsLossPerShare contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRWEPS" decimals="INF">14786</ns2:DilutedEarningsLossPerShare>
+  <ns2:BasicEarningsLossPerShare contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRWEPS" decimals="INF">15729</ns2:BasicEarningsLossPerShare>
+  <ns2:ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_ClassesOfShareCapitalAxis_ifrs-full_OrdinarySharesMember" unitRef="KRW" decimals="0">163418388726</ns2:ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity>
+<ns0:context id="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_GeographicalAreasAxis_ifrs-full_ForeignCountriesMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:ConsolidatedMember</ns1:explicitMember>
+        <ns1:explicitMember dimension="ifrs-full:GeographicalAreasAxis">ifrs-full:ForeignCountriesMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2024-01-01</ns0:startDate>
+      <ns0:endDate>2024-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_CarryingAmountAccumulatedDepreciationAmortisationAndImpairmentAndGrossCarryingAmountAxis_dart_ReportedAmountMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:SeparateMember</ns1:explicitMember>
+        <ns1:explicitMember dimension="ifrs-full:CarryingAmountAccumulatedDepreciationAmortisationAndImpairmentAndGrossCarryingAmountAxis">dart:ReportedAmountMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2024-01-01</ns0:startDate>
+      <ns0:endDate>2024-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="BPFY2023dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:SeparateMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2023-01-01</ns0:startDate>
+      <ns0:endDate>2023-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_GeographicalAreasAxis_ifrs-full_CountryOfDomicileMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:ConsolidatedMember</ns1:explicitMember>
+        <ns1:explicitMember dimension="ifrs-full:GeographicalAreasAxis">ifrs-full:CountryOfDomicileMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2024-01-01</ns0:startDate>
+      <ns0:endDate>2024-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:SeparateMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2024-01-01</ns0:startDate>
+      <ns0:endDate>2024-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_GeographicalAreasAxis_ifrs-full_ForeignCountriesMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:SeparateMember</ns1:explicitMember>
+        <ns1:explicitMember dimension="ifrs-full:GeographicalAreasAxis">ifrs-full:ForeignCountriesMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2024-01-01</ns0:startDate>
+      <ns0:endDate>2024-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_CarryingAmountAccumulatedDepreciationAmortisationAndImpairmentAndGrossCarryingAmountAxis_dart_ReportedAmountMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:SeparateMember</ns1:explicitMember>
+        <ns1:explicitMember dimension="ifrs-full:CarryingAmountAccumulatedDepreciationAmortisationAndImpairmentAndGrossCarryingAmountAxis">dart:ReportedAmountMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2025-01-01</ns0:startDate>
+      <ns0:endDate>2025-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_CarryingAmountAccumulatedDepreciationAmortisationAndImpairmentAndGrossCarryingAmountAxis_dart_ReportedAmountMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:ConsolidatedMember</ns1:explicitMember>
+        <ns1:explicitMember dimension="ifrs-full:CarryingAmountAccumulatedDepreciationAmortisationAndImpairmentAndGrossCarryingAmountAxis">dart:ReportedAmountMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2025-01-01</ns0:startDate>
+      <ns0:endDate>2025-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_GeographicalAreasAxis_ifrs-full_CountryOfDomicileMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:SeparateMember</ns1:explicitMember>
+        <ns1:explicitMember dimension="ifrs-full:GeographicalAreasAxis">ifrs-full:CountryOfDomicileMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2024-01-01</ns0:startDate>
+      <ns0:endDate>2024-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_GeographicalAreasAxis_ifrs-full_CountryOfDomicileMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:SeparateMember</ns1:explicitMember>
+        <ns1:explicitMember dimension="ifrs-full:GeographicalAreasAxis">ifrs-full:CountryOfDomicileMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2025-01-01</ns0:startDate>
+      <ns0:endDate>2025-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="BPFY2023dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:ConsolidatedMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2023-01-01</ns0:startDate>
+      <ns0:endDate>2023-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_GeographicalAreasAxis_ifrs-full_ForeignCountriesMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:SeparateMember</ns1:explicitMember>
+        <ns1:explicitMember dimension="ifrs-full:GeographicalAreasAxis">ifrs-full:ForeignCountriesMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2025-01-01</ns0:startDate>
+      <ns0:endDate>2025-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_GeographicalAreasAxis_ifrs-full_CountryOfDomicileMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:ConsolidatedMember</ns1:explicitMember>
+        <ns1:explicitMember dimension="ifrs-full:GeographicalAreasAxis">ifrs-full:CountryOfDomicileMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2025-01-01</ns0:startDate>
+      <ns0:endDate>2025-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_CarryingAmountAccumulatedDepreciationAmortisationAndImpairmentAndGrossCarryingAmountAxis_dart_ReportedAmountMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:ConsolidatedMember</ns1:explicitMember>
+        <ns1:explicitMember dimension="ifrs-full:CarryingAmountAccumulatedDepreciationAmortisationAndImpairmentAndGrossCarryingAmountAxis">dart:ReportedAmountMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2024-01-01</ns0:startDate>
+      <ns0:endDate>2024-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_GeographicalAreasAxis_ifrs-full_ForeignCountriesMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:ConsolidatedMember</ns1:explicitMember>
+        <ns1:explicitMember dimension="ifrs-full:GeographicalAreasAxis">ifrs-full:ForeignCountriesMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2025-01-01</ns0:startDate>
+      <ns0:endDate>2025-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns0:context id="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember">
+    <ns0:entity>
+      <ns0:identifier scheme="http://dart.fss.or.kr/ifrs/CIK">00970453</ns0:identifier>
+      <ns0:segment>
+        <ns1:explicitMember dimension="ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis">ifrs-full:ConsolidatedMember</ns1:explicitMember>
+      </ns0:segment>
+    </ns0:entity>
+    <ns0:period>
+      <ns0:startDate>2024-01-01</ns0:startDate>
+      <ns0:endDate>2024-12-31</ns0:endDate>
+    </ns0:period>
+  </ns0:context>
+  <ns2:Revenue contextRef="BPFY2023dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember" unitRef="KRW" decimals="0">235499410567</ns2:Revenue>
+  <ns3:OperatingIncomeLoss contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember" unitRef="KRW" decimals="0">207553562681</ns3:OperatingIncomeLoss>
+  <ns3:OperatingIncomeLoss contextRef="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember" unitRef="KRW" decimals="0">122309209338</ns3:OperatingIncomeLoss>
+  <ns2:Revenue contextRef="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_GeographicalAreasAxis_ifrs-full_ForeignCountriesMember" unitRef="KRW" decimals="0">97027020247</ns2:Revenue>
+  <ns2:Revenue contextRef="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember" unitRef="KRW" decimals="0">312732023380</ns2:Revenue>
+  <ns2:Revenue contextRef="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember" unitRef="KRW" decimals="0">350115068641</ns2:Revenue>
+  <ns2:Revenue contextRef="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_GeographicalAreasAxis_ifrs-full_ForeignCountriesMember" unitRef="KRW" decimals="0">130366321718</ns2:Revenue>
+  <ns2:Revenue contextRef="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_GeographicalAreasAxis_ifrs-full_CountryOfDomicileMember" unitRef="KRW" decimals="0">219748746923</ns2:Revenue>
+  <ns2:Revenue contextRef="BPFY2023dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember" unitRef="KRW" decimals="0">261010910564</ns2:Revenue>
+  <ns3:OperatingIncomeLoss contextRef="BPFY2023dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember" unitRef="KRW" decimals="0">92257786628</ns3:OperatingIncomeLoss>
+  <ns3:OperatingIncomeLoss contextRef="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember" unitRef="KRW" decimals="0">126050757121</ns3:OperatingIncomeLoss>
+  <ns3:OperatingIncomeLoss contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember" unitRef="KRW" decimals="0">214395758571</ns3:OperatingIncomeLoss>
+  <ns2:Revenue contextRef="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_CarryingAmountAccumulatedDepreciationAmortisationAndImpairmentAndGrossCarryingAmountAxis_dart_ReportedAmountMember" unitRef="KRW" decimals="0">312732023380</ns2:Revenue>
+  <ns2:Revenue contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_CarryingAmountAccumulatedDepreciationAmortisationAndImpairmentAndGrossCarryingAmountAxis_dart_ReportedAmountMember" unitRef="KRW" decimals="0">473789922204</ns2:Revenue>
+  <ns2:Revenue contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember" unitRef="KRW" decimals="0">536289118812</ns2:Revenue>
+  <ns2:Revenue contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_GeographicalAreasAxis_ifrs-full_ForeignCountriesMember" unitRef="KRW" decimals="0">207495729191</ns2:Revenue>
+  <ns2:Revenue contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_GeographicalAreasAxis_ifrs-full_CountryOfDomicileMember" unitRef="KRW" decimals="0">328793389621</ns2:Revenue>
+  <ns2:Revenue contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_GeographicalAreasAxis_ifrs-full_CountryOfDomicileMember" unitRef="KRW" decimals="0">315535435643</ns2:Revenue>
+  <ns2:Revenue contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_GeographicalAreasAxis_ifrs-full_ForeignCountriesMember" unitRef="KRW" decimals="0">158254486561</ns2:Revenue>
+  <ns2:Revenue contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember" unitRef="KRW" decimals="0">473789922204</ns2:Revenue>
+  <ns2:Revenue contextRef="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_CarryingAmountAccumulatedDepreciationAmortisationAndImpairmentAndGrossCarryingAmountAxis_dart_ReportedAmountMember" unitRef="KRW" decimals="0">350115068641</ns2:Revenue>
+  <ns2:Revenue contextRef="CFY2025dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember_ifrs-full_CarryingAmountAccumulatedDepreciationAmortisationAndImpairmentAndGrossCarryingAmountAxis_dart_ReportedAmountMember" unitRef="KRW" decimals="0">536289118812</ns2:Revenue>
+  <ns3:OperatingIncomeLoss contextRef="BPFY2023dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember" unitRef="KRW" decimals="0">89558347087</ns3:OperatingIncomeLoss>
+  <ns2:Revenue contextRef="PFY2024dFY_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_SeparateMember_ifrs-full_GeographicalAreasAxis_ifrs-full_CountryOfDomicileMember" unitRef="KRW" decimals="0">215705003133</ns2:Revenue>
+  </ns0:xbrl>

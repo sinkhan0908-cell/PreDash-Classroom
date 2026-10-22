@@ -14,7 +14,7 @@ from xml.etree import ElementTree as ET
 from predash.ttm import TtmError,VERSION,now,calculate
 from predash.company_codes import company_name_key
 
-READER_VERSION=3
+READER_VERSION=4
 
 X='http://www.xbrl.org/2003/instance'
 D='http://xbrl.org/2006/xbrldi'
@@ -139,11 +139,12 @@ def collect(provider,today,annual,read=download,progress=None):
     if not reports:raise TtmError('DART 최근 정기공시 목록 미확인')
     y,month=max(reports)
     if y<today.year-1:raise TtmError('DART 최근 완료 기간 미확인')
+    latest_body=read_report(reports[y,month],REPORTS[month])
     if month==12:
-        inputs=parse(read_report(reports[y,month],REPORTS[month]),[(f'{y}-01-01',f'{y}-12-31')],reports[y,month],today)
+        inputs=parse(latest_body,[(f'{y}-01-01',f'{y}-12-31')],reports[y,month],today)
     else:
         suffix=f'{month:02d}-{31 if month in (3,12) else 30}'
-        current=parse(read_report(reports[y,month],REPORTS[month]),[(f'{y}-01-01',f'{y}-{suffix}'),(f'{y-1}-01-01',f'{y-1}-{suffix}')],reports[y,month],today)
+        current=parse(latest_body,[(f'{y}-01-01',f'{y}-{suffix}'),(f'{y-1}-01-01',f'{y-1}-{suffix}')],reports[y,month],today)
         if (y-1,12) not in reports:raise TtmError('DART 전년 연간 보고서 미확인')
         previous=reports[y-1,12]
         inputs=parse(read_report(previous,'11011'),[(f'{y-1}-01-01',f'{y-1}-12-31')],previous,today)+current
@@ -153,6 +154,14 @@ def collect(provider,today,annual,read=download,progress=None):
         if comparable and any(abs(r['reported_eps']-row['reported_eps'])>1.1 for r in comparable):raise TtmError('DART XBRL과 공식 IR 연간 EPS 불일치 · 정정 여부 확인 필요')
     block={**annual,'xbrl_reader_version':READER_VERSION,'status':'success','inputs':inputs,'reason':None,'source_route':'DART XBRL CFS ordinary EPS + official IR annual EPS',
         'last_attempt_at':now(),'fetched_at':now(),'latest_scope':'기업명이 일치하는 DART 정기공시 목록의 최신 완료 기간 · 원문 XBRL 계정·기간·단위 대조'}
+    from predash.business_metrics import parse as parse_business,BusinessError,REASONS
+    report_progress('매출·영업이익과 전년 동기 기간을 검증합니다…')
+    try:
+        block['business_metrics']=parse_business(latest_body,'214450','00970453',y,month//3,reports[y,month],today)
+        block['business_metrics']['listing_checked_at']=now()
+    except BusinessError as exc:
+        block['business_metrics']={'version':1,'status':'failed','code':'214450','reason_code':str(exc),
+            'reason':REASONS.get(str(exc),REASONS['BIZ_SCHEMA']),'last_attempt_at':now()}
     checked=calculate(block,{'close':1,'date':today.isoformat(),'source':'validation'},today)
     if checked['eps'] is None:raise TtmError('XBRL TTM 기간·순이익·주식수 대조 실패')
     return block

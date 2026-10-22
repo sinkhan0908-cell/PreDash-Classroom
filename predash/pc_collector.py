@@ -9,6 +9,7 @@ from predash.financial_store import select_snapshot, clean_snapshot, persist
 from predash.official import Official, DataError
 from predash.lynch import collect_lynch
 from predash import ttm, dart_xbrl, pharma_ir
+from predash.business_metrics import view as business_view,BusinessError,REASONS
 
 
 # Only repository-authored literal messages may be shown; never raw server responses.
@@ -16,6 +17,9 @@ SAFE_REASONS = ('DART XBRL ZIP·XML 형식 확인 필요', 'DART XBRL 압축 크
 
 def diagnostic(exc):
     message = str(exc)
+    if isinstance(exc,BusinessError):
+        code=message if message in REASONS else 'BIZ_SCHEMA'
+        return '원인 ['+code+']: '+REASONS[code]
     if message in SAFE_REASONS:
         return "원인: " + message
     if isinstance(exc, DataError):
@@ -54,6 +58,10 @@ def collect_and_save(client, provider, code, today):
     checked = ttm.calculate(block, {'close': 1, 'date': today.isoformat(), 'source': 'validation'}, today)
     if checked['eps'] is None:
         raise ValueError('TTM 재무자료 계산 검증 실패')
+    business=business_view(block,code,today)
+    if code=='214450' and not business:
+        raise BusinessError(block.get('business_metrics',{}).get('reason_code','BIZ_SCHEMA'))
+    if business:checked['business_metrics']=business
     saved['ttm'] = block
     clean_snapshot(saved)
     print('재무 검증 완료 · Supabase 저장 중…')
@@ -65,7 +73,7 @@ def collect_and_save(client, provider, code, today):
 
 
 def main():
-    print('PreDash PC 수집기 v2: 공식 DART → 기존 Supabase')
+    print('PreDash PC 수집기 v3: 공식 DART → 기존 Supabase')
     print('키는 이 창에서만 입력하며 파일에 저장하지 않습니다. 입력 중 글자가 보이지 않습니다.')
     try:
         url = input('SUPABASE_URL: ').strip().rstrip('/')
@@ -78,6 +86,9 @@ def main():
         checked = collect_and_save(CloudStore(url, secret), Official(dart_key=dart_key, price_key=''), code,
                                    datetime.now(ZoneInfo('Asia/Seoul')).date())
         print(f"Supabase 저장 성공: {code} / TTM EPS {checked['eps']:,.2f}원")
+        if checked.get('business_metrics'):
+            m=checked['business_metrics']
+            print(f"{m['year']}년 1~{m['quarter']}분기 연결 누적 · 매출 {m['revenue']:,.2f}억원 / 영업이익 {m['profit']:,.2f}억원")
         print('사이트 파마리서치 분석에서 PC 저장자료 불러오기를 눌러 주세요.')
         return 0
     except (StorageError, DataError, ValueError) as exc:

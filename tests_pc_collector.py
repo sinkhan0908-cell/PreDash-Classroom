@@ -24,6 +24,7 @@ class PcCollectorTests(unittest.TestCase):
         with patch.object(pc, 'select_snapshot', side_effect=[deepcopy(self.saved), {'ttm': {**block, 'collector_version': pc.ttm.COLLECTOR_VERSION}}]), \
              patch.object(pc.dart_xbrl, 'collect', return_value=block), \
              patch.object(pc.ttm, 'calculate', return_value={'eps': eps}), \
+             patch.object(pc, 'business_view', return_value={'revenue': 3248.05}), \
              patch.object(pc, 'persist', return_value={'payload': {}}) as persist:
             if status != 'success' or eps is None:
                 with self.assertRaises(ValueError):

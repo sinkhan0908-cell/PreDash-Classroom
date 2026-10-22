@@ -35,7 +35,7 @@ collection_status = financial_validation_module.collection_status
 export_validation = financial_validation_module.export_validation
 from predash.financial_cache import FinancialCache
 import predash.financial_store as financial_store_module
-if getattr(financial_store_module, 'FRESHNESS_VERSION', 0) < 1 or getattr(financial_store_module, 'TTM_STORE_VERSION', 0) < 2:
+if getattr(financial_store_module, 'FRESHNESS_VERSION', 0) < 1 or getattr(financial_store_module, 'TTM_STORE_VERSION', 0) < 3:
     financial_store_module = importlib.reload(financial_store_module)
 select_financial_snapshot, persist_financial_snapshot, check_financial_snapshot = financial_store_module.select_snapshot, financial_store_module.persist, financial_store_module.clean_snapshot
 from predash.runtime import ensure_lynch_runtime
@@ -526,6 +526,13 @@ def lynch_results(saved,today):
     if price_check!='matched':st.caption({'mismatch':'종가 제공처 수치 불일치 · 공공 종가 우선 적용','date_mismatch':'종가 제공처 기준일 다름 · 더 최근 기준일 선택','single_source':'종가 단일 제공처 · 교차 대조 미완료','not_checked':'종가 교차 대조 미실시'}.get(price_check,'종가 확인 필요'))
     if result['price_gap'] or quote.get('error'):st.caption('가격 지표 일부 미확인 · 분석 근거에서 기준일과 사유를 확인하세요.')
     st.subheader('03  재무 상태')
+    from predash.business_metrics import view as business_view
+    business=business_view(saved.get('ttm',{}),data['code'],today)
+    if business:
+        st.caption(f"연결 누적 실적: {business['period_start']} ~ {business['period_end']} · 전년 동일 기간 비교 · 단위 억원")
+        st.html(lynch_table(['항목','전년 동기','당기 누적','증감률'],[
+            ['매출',lynch_number(business['prior_revenue'],digits=2),lynch_number(business['revenue'],digits=2),lynch_number(business['revenue_growth_pct'],'%')],
+            ['영업이익',lynch_number(business['prior_profit'],digits=2),lynch_number(business['profit'],digits=2),lynch_number(business['growth_pct'],'%')]]))
     balances=data.get('lynch',{}).get('balances',[])
     if not is_kis and len(balances)==2:
         previous,current=balances;rows=[]
@@ -1046,7 +1053,9 @@ def watch_fetch(code,provider,today,progress=None):
             result['pc_ttm']=calculate_ttm(saved['ttm'],saved['quote'],today)
             result['report']={'disclosures':[{'date':r.get('available_on',''),'title':'PC 검증 재무 원문 · '+r.get('period_end',''),
                 'url':r['source']} for r in saved.get('ttm',{}).get('inputs',[]) if r.get('source')]}
-            result['errors']['metrics']='최근 분기 매출·영업이익은 PC 수집자료에 포함되지 않습니다.'
+            from predash.business_metrics import view as business_view
+            result['metrics']=business_view(saved['ttm'],code,today)
+            if not result['metrics']:result['errors']['metrics']='매출·영업이익 저장자료 미확인 · 최신 PC 수집기로 다시 수집해 주세요.'
         else:result['errors']['metrics']='PC 수집기로 재무자료를 저장한 뒤 PC 저장자료 불러오기를 눌러주세요.'
     elif api_key('DART_CRTFC_KEY'):
         try:result['metrics']=provider.latest_period_metrics(code,today)
@@ -1565,7 +1574,16 @@ elif page=='투자 근거':
         st.info('관심종목을 선택하거나 종목코드를 입력한 뒤 근거 자료 새로고침을 누르세요.')
         st.stop()
     market_name=data.get('market',market_name)
-    item=data['item'];m=item['metrics'];lamp=item['lamp'];flow=item['flow']
+    item=data['item']
+    if code=='214450':
+        latest_saved=pc_research_financial(code)
+        if latest_saved:
+            from predash.business_metrics import view as business_view
+            item['financial_snapshot']=latest_saved
+            item['metrics']=business_view(latest_saved['ttm'],code,datetime.now(ZoneInfo('Asia/Seoul')).date())
+            item['pc_ttm']=calculate_ttm(latest_saved['ttm'],latest_saved['quote'],datetime.now(ZoneInfo('Asia/Seoul')).date())
+            if item['metrics']:item.setdefault('errors',{}).pop('metrics',None)
+    m=item['metrics'];lamp=item['lamp'];flow=item['flow']
     st.subheader(f"{item['name']} · {code}")
     st.caption(f"자료 조회 {item['fetched']} · 기관별 기준일은 아래에 표시합니다.")
     if not any((item.get('lamp'),item.get('metrics'),item.get('flow'),item.get('pc_ttm',{}).get('eps') is not None)):
@@ -1592,7 +1610,7 @@ elif page=='투자 근거':
         b.metric('영업이익',f"{m['profit']:,.1f}억" if m else '보류')
         c.metric('영업이익 동기 증가율',f"{m['growth_pct']:+.1f}%" if m and m['growth_pct'] is not None else '보류')
         d.metric('영업이익률',f"{m['margin_pct']:,.1f}%" if m and m['margin_pct'] is not None else '보류')
-        if m:st.caption(f"OpenDART · {m['year']}년 {m['quarter']}분기 누적 · {m['basis']} · 전년 동기 누적 비교")
+        if m:st.caption(f"OpenDART · {m['period_start']} ~ {m['period_end']} · 연결 누적 · 전년 동일 기간 비교" if m.get('period_end') else f"OpenDART · {m['year']}년 {m['quarter']}분기 누적 · {m['basis']} · 전년 동기 누적 비교")
     left,right=st.columns([1.6,1],gap='medium')
     with left:
         st.subheader('시장보다 강했는가?')

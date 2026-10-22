@@ -123,4 +123,4 @@ class ActualAnnualAndTtmTests(unittest.TestCase):
         self.assertEqual((valuation['period_start'], valuation['period_end']), ('2025-07-01', '2026-06-30'))
         self.assertEqual(restored['data'], saved['data'])
         self.assertEqual(fixture.db['payload']['journal'], [{'note': 'preserve'}])
-        self.assertEqual(restored['ttm']['xbrl_reader_version'], 3)
+        self.assertEqual(restored['ttm']['xbrl_reader_version'], 4)
